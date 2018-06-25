@@ -1,0 +1,342 @@
+---
+title: "T-Cell Fluorescence Oscillation "
+author: "Jzhao365"
+date: "6/19/2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(Rssa)
+library(ggplot2)
+library(dplyr)
+library("scales")
+library(gridExtra)
+```
+
+## Set analysis parameters 
+```{r}
+# Set ssa window length
+window = 124
+# Set lag for autocorrelation
+lag = 64 
+# Threshold R-square value to screen sinusoid curve
+threshold = 0.50
+```
+
+## Define Functions
+```{r}
+# Function: Extract x,y coordiantes from each Header
+row.xy <- function(string){
+  x <- as.numeric(substring(string,2,4))
+  y <- as.numeric(substring(string,6,8))
+  return(c(x,y))
+}
+
+# Function: Linear detrend and normalized with standard deviation 
+lm.detrend.norm <- function(df) {
+  names(df) <- "Intensity"
+  tt <- seq(1,dim(df)[1],1)
+  df[["Frame"]] <- tt
+  lm.fit <- lm(Intensity ~ Frame, df)
+  std <- sd(df[["Intensity"]])
+  df[["Intensity"]] <- (df[["Intensity"]] - predict(lm.fit))/std
+  return(df[["Intensity"]])
+}
+
+# Function: Pixel-wise screening for sinusoid oscillation
+sine.screen <- function(u.acf, threshold) {
+  # Extract the acf and time pairs 
+  y <- u.acf$acf[2:lag]   # acf value
+  t <- u.acf$lag[2:lag]   # lag time
+  # Conducting Fast Fourier Transform (FFT)  
+  ssp <- spectrum(y, plot=FALSE) 
+  # Extract periodicity with largest spectrum density
+  per <- 1/ssp$freq[ssp$spec==max(ssp$spec)]
+  # Transfomred linear fit for sinusoid time-series
+  reslm <- lm(y ~ sin(2*pi/per*t)+cos(2*pi/per*t))
+  # The sinusoid screening criteria !!! 
+  if ((summary(reslm)$r.squared >= threshold) & (per < 60) & (per > 8)) {
+    return(per)
+  } else {
+    return(0)
+  }
+}
+
+# Function: Plot time-series with single dataframe
+ts_plot <- function (df, title){
+  names(df) <- "Intensity"
+  tt <- seq(1,dim(df)[1],1)
+  df[["Frame"]] <- tt
+  print(ggplot(df, aes(x=Frame, y=Intensity))  + geom_line() + ggtitle(title))
+}
+
+# Function: Pixel-wise screening for Sinusoid and plotting the extracted vectors and fitting 
+sine.screen.plot <- function(vector, threshold) {
+  u.acf <- acf(UU[[vector]], lag.max = lag, plot = FALSE)
+  # Extract the acf and time pairs 
+  y <- u.acf$acf[2:lag]   # acf value
+  t <- u.acf$lag[2:lag]   # lag time
+  # Conducting Fast Fourier Transform (FFT)  
+  ssp <- spectrum(y, plot=FALSE) 
+  # Extract periodicity with largest spectrum density
+  per <- 1/ssp$freq[ssp$spec==max(ssp$spec)]
+  # Transfomred linear fit for sinusoid time-series
+  reslm <- lm(y ~ sin(2*pi/per*t)+cos(2*pi/per*t))
+  # The sinusoid screening criteria !!! 
+  if (summary(reslm)$r.squared >= threshold & (per < 60) & (per > 8)) {
+    # Plot orthonormal vector calculated from SSA
+    ts_plot(UU[vector], paste(vector, "Time-Series"))
+    title <- paste(vector, ",", "Period =", signif(per,digits=6), ",", "Frequency =", signif(1/per, digits=3), ",", "R-square =", toString(signif(summary(reslm)$r.squared,digits = 3)))
+    
+    df_sine <- cbind.data.frame(t,y,fitted(reslm))
+    names(df_sine) <- c("t","y","y_hat")
+    print(ggplot(df_sine, aes(x = t)) + geom_point(aes(y=y), shape = 1) + geom_line(aes(y=y_hat, color = "red")) +      ggtitle(title))
+  } 
+}
+
+```
+
+## Imaging Data Loading and Preprocessing 
+
+```{r}
+# Load data matrix
+df <- read.csv("Cell-1.csv")       
+# Remove first two columns, Header is the pixel coordinate in "x.y"" format
+df1 <- df[,3:dim(df)[2]]
+# Z dimension
+print(paste("There are",dim(df1)[1],"frames in the movie."))
+# X - Y dimensions
+colNames <- colnames(df1)
+start_xy <- row.xy(colNames[1])
+end_xy <- row.xy(colNames[length(colNames)])
+print(paste("The x coordinstes range from", start_xy[1], "to", end_xy[1]))
+print(paste("The y coordinstes range from", start_xy[2], "to", end_xy[2]))
+x_pixels <- end_xy[1] - start_xy[1] + 1
+y_pixels <- end_xy[2] - start_xy[2] + 1
+print(paste("The dimension of image frame is", x_pixels,"*", y_pixels))
+
+```
+
+## ROI Pixel-wise Analysis
+
+```{r, warning=FALSE, fig.height = 3, fig.width = 4, figure.align ="center"}
+# Make a df for collecting pixel-wise time-series statistics. 
+# The seven statistic features are :
+#1  Average fluorescent intensity of raw series; 
+#2  Standard deviation of fluorescent intensity raw series;
+#3  e1 percentage; 
+#4  p1; 
+#5  e2 percentage; 
+#6  p2 
+#7  e3 percentage;
+#8  p3
+#9  e4 percentage;
+#10 p4
+df_stats <- data.frame(t(df1[1:10,]))  
+names(df_stats) <- c("I_bar","I_std","E1","P1","E2","P2","E3","P3","E4","P4")
+# Set all values to 0
+df_stats[] <- 0     
+# Calculate the average fluorescence intensity (I_bar)
+df_stats[,'I_bar'] <- colMeans(df1) 
+# Calculate the standard deviation of fluorescence intensity (I_std)
+df_stats[,'I_std'] <- apply(df1, MARGIN = 2, FUN=sd)
+# Scan through each pixel
+for (i in 1:length(df1)) {
+  # First step, linear detrend and normalized with standard deviation 
+  df_pixel_dn <- lm.detrend.norm(df1[i])
+  # Second step, Singular Spectrum Analysis (SSA).  
+  s <- ssa(df_pixel_dn, L = window)  
+  # Calulate singualr vaules in percentage
+  SS_percentage <- sqrt(s$sigma)/sum(sqrt(s$sigma))
+  df_stats[i,'E1'] <- SS_percentage[1]                # Assign the e1 percentage
+  df_stats[i,'E2'] <- SS_percentage[2]                # Assign the e2 percentage
+  df_stats[i,'E3'] <- SS_percentage[3]                # Assign the e3 percentage
+  df_stats[i,'E4'] <- SS_percentage[4]                # Assign the e4 percentage
+  # Extract the left matrix (time-series)  
+  UU <- data.frame(s$U)              
+  tt2 <- seq(1,window,1)
+  UU[['Frame']] <- tt2
+  # Calculate autocorrelation function (ACF) of principal time-series   
+  u1.acf <- acf(UU[['X1']],  lag.max = lag, plot = FALSE)   
+  u2.acf <- acf(UU[['X2']],  lag.max = lag, plot = FALSE)
+  u3.acf <- acf(UU[['X3']],  lag.max = lag, plot = FALSE)    
+  u4.acf <- acf(UU[['X4']],  lag.max = lag, plot = FALSE)  
+  df_stats[i,'P1'] <- sine.screen(u1.acf, threshold)              # Assign the p1
+  df_stats[i,'P2'] <- sine.screen(u2.acf, threshold)              # Assign the p2
+  df_stats[i,'P3'] <- sine.screen(u3.acf, threshold)              # Assign the p3
+  df_stats[i,'P4'] <- sine.screen(u4.acf, threshold)              # Assign the p4
+}
+
+# Convert Header of df1 into X, Y columns of df_stats
+rowNames_stats <- rownames(df_stats)
+df.xy <- data.frame(t(data.frame(lapply(rowNames_stats, row.xy))))
+names(df.xy) <- c("X","Y")
+df_stats[["X"]] <- df.xy[["X"]]
+df_stats[["Y"]] <- df.xy[["Y"]]
+
+
+# Cut-off background pixel and determine period of each pixel
+df_stats[["Period"]] <- 0
+for (i in 1:dim(df_stats)[1]) {
+  if (df_stats[i,'I_bar'] >= 1200) {  # Cut-off fluorescence intensity value !!
+    period_max <- max(df_stats[i,'P1'], df_stats[i,'P2'], df_stats[i,'P3'], df_stats[i,'P4'])
+    if (period_max != 0) {
+      df_stats[i,"Period"] <- period_max
+    } else {
+      df_stats[i,"Period"] <- 0
+    }
+  }
+}
+
+# Make a copy of df_stats
+df_stats_sample <- df_stats[sample(nrow(df_stats)),]
+
+# Count the number of non-zero terms in each column of df_stats
+colSums(df_stats != 0)    
+# Show unique values of period
+#unique(df_stats[["Period"]])
+
+# Heatmap plot 
+ggplot(data = df_stats, aes(x=X, y=Y, fill=Period)) + scale_y_continuous(trans = "reverse") +
+  geom_tile() + scale_fill_gradient(low="Black", high="Dodgerblue", guide = 'legend')  + theme_void()
+
+ggplot(data = df_stats, aes(x=X, y=Y, fill=Period)) + scale_y_continuous(trans = "reverse") +
+  geom_tile() + scale_fill_gradientn(colours= c("black", "dodgerblue4","dodgerblue3","dodgerblue2", "dodgerblue","deepskyblue" ),
+                       values=rescale(c(0, 9, 12, 16,  21, 30)), guide = 'legend')  + theme_void()
+
+```
+
+## Plotting Statistics
+```{r, warning=FALSE, fig.height = 3, fig.width = 6}
+h1 <- ggplot(df_stats, aes(x=I_bar)) + geom_histogram(binwidth=10)
+h2 <- ggplot(df_stats, aes(x=I_std)) + geom_histogram(binwidth=2)
+grid.arrange(h1,h2,ncol=2)
+```
+```{r,warning=FALSE, fig.height = 4, fig.width = 4}
+ggplot(df_stats, aes(y = I_bar, x = E1)) + geom_point(size=0.5)
+ggplot(df_stats, aes(y = I_bar, x = E2)) + geom_point(size=0.5)
+ggplot(df_stats, aes(y = I_bar, x = E3)) + geom_point(size=0.5)
+ggplot(df_stats, aes(y = I_bar, x = E4)) + geom_point(size=0.5)
+```
+```{r, warning=FALSE, fig.height = 3, fig.width = 3}
+
+df_stats[['P1']] <- round(df_stats[['P1']], digits=1)
+df_stats[['P2']] <- round(df_stats[['P2']], digits=1)
+df_stats[['P3']] <- round(df_stats[['P3']], digits=1)
+df_stats[['P4']] <- round(df_stats[['P4']], digits=1)
+df_stats[['Period']] <- round(df_stats[['Period']], digits=1)
+
+df_period <- setNames(as.data.frame(table(df_stats$Period)), c("Period", "n"))
+df_period
+df_period[["n"]] <- df_period[["n"]]/sum(df_period$n)
+ggplot(data=df_period[2:7,], aes(x=Period, y=n)) + geom_bar(stat="identity") + ylab("Percentage")
+
+```
+```{r,warning=FALSE, fig.height = 3, fig.width = 6, fig.ncol=2}
+df_stats$P1 <- as.factor(df_stats$P1)
+p1 <- ggplot(df_stats, aes(y = I_bar, x = P1)) + geom_boxplot() + 
+    stat_summary(fun.y=mean, geom="point", shape=5, size=4)
+df_stats$P2 <- as.factor(df_stats$P2)
+p2 <- ggplot(df_stats, aes(y = I_bar, x = P2)) + geom_boxplot() +
+    stat_summary(fun.y=mean, geom="point", shape=5, size=4)
+grid.arrange(p1,p2,ncol=2)
+
+df_stats$P3 <- as.factor(df_stats$P3)
+p3 <- ggplot(df_stats, aes(y = I_bar, x = P3)) + geom_boxplot() +
+    stat_summary(fun.y=mean, geom="point", shape=5, size=4)
+df_stats$P4 <- as.factor(df_stats$P4)
+p4 <- ggplot(df_stats, aes(y = I_bar, x = P4)) + geom_boxplot() +
+    stat_summary(fun.y=mean, geom="point", shape=5, size=4)
+grid.arrange(p3,p4,ncol=2)
+
+df_stats$Period <- as.factor(df_stats$Period)
+p5 <- ggplot(df_stats, aes(y = I_bar, x = Period)) + geom_boxplot() +
+    stat_summary(fun.y=mean, geom="point", shape=5, size=4)
+p6 <- ggplot(df_stats, aes(y = I_std, x = Period)) + geom_boxplot() +
+    stat_summary(fun.y=mean, geom="point", shape=5, size=4)
+grid.arrange(p5,p6,ncol=2)
+```
+
+## Check through all pixels with non-zero period values
+
+```{r, warning=FALSE, fig.height = 3, fig.width = 6}
+pixel.check <- function (pixel.header) {
+  # Load single time-series from df1
+  df_pixel <- df1[pixel.header]
+  # Plot raw fluorescent intensity time-series
+  ts_plot(df_pixel, "Raw Fluorescent Intensity Time-Series")
+  # Plot detrend and normalized fluorescent intensity time-series
+  df_pixel_dn <- data.frame(lm.detrend.norm(df_pixel))
+  ts_plot(df_pixel_dn, "Detrend and Normalized Fluorescent Intensity Time Series")
+  # Conduct SSA
+  s <- ssa(df_pixel_dn, L=window)                  
+  # Display percentage singular value (sqrt of eigenvaules lambda)
+  print(sqrt(s$sigma)[1:4]/sum(sqrt(s$sigma)))
+  # Extract the left matrix (time-series)
+  UU <- data.frame(s$U)
+  
+  sine.screen.plot('X1', threshold)
+  sine.screen.plot('X2', threshold)
+  sine.screen.plot('X3', threshold)
+  sine.screen.plot('X4', threshold)
+}
+
+set.seed(1)
+df_stats_sample <- df_stats_sample[!duplicated(df_stats_sample[,'Period']),]
+
+
+
+for (i in 1:dim(df_stats_sample)[1]) {
+  # For pixel with non-zero period value
+  if (df_stats_sample[i,'Period'] > 0) {  
+     header <- rownames(df_stats_sample)[i]
+     pixel.check(header) 
+  }
+}
+
+```
+
+
+## Checking Individual Pixel
+
+```{r, echo = FALSE, eval = FALSE}
+
+ts_plot <- function (df, title){
+  names(df) <- "Intensity"
+  tt <- seq(1,dim(df)[1],1)
+  df[["Frame"]] <- tt
+  print(ggplot(df, aes(x=Frame, y=Intensity))  + geom_line() + ggtitle(title))
+}
+
+# Input of pixel header
+pixel.header <- "X181.20"
+# Load single time-series from df1
+df_pixel <- df1[pixel.header]
+# Plot raw fluorescent intensity time-series
+ts_plot(df_pixel, "Raw Fluorescent Intensity Time-Series")
+# Plot detrend and normalized fluorescent intensity time-series
+df_pixel_dn <- data.frame(lm.detrend.norm(df_pixel))
+ts_plot(df_pixel_dn, "Detrend and Normalized Fluorescent Intensity Time Series")
+
+# Conduct SSA
+s <- ssa(df_pixel_dn, L=window)                  
+# Display percentage singular value (sqrt of eigenvaules lambda)
+print(sqrt(s$sigma)[1:4]/sum(sqrt(s$sigma)))
+# Extract the left matrix (time-series)
+UU <- data.frame(s$U)
+
+sine.screen.plot('X1', threshold)
+sine.screen.plot('X2', threshold)
+sine.screen.plot('X3', threshold)
+sine.screen.plot('X4', threshold)
+
+```
+
+
+
+
+
+
+
+
