@@ -1,5 +1,5 @@
 # Fluorescence_Oscillation
-Detect and analyze fluorescence oscillation of T-Cell fluorescent imagings in the time domain
+Detect and analyze fluorescence oscillation in the time domain
 
 ## Table of Contents
 
