@@ -1,18 +1,11 @@
 # Fluorescence_Oscillation
-Detect and analyze fluorescence oscillation in the time domain
+Detect and analyze fluorescence oscillation in the time domain.
 
 ## Table of Contents
 
-**FluorescenceOscillation.Rmd** is the R markdown file that read the dataframes, conduct analysis and display statistical plots. 
+**FluorescenceOscillation.Rmd** is the R markdown file that read the data files, conduct time-series analysis and display statistical plots. 
 
-**ZXY-4.ijm** is the ImageJ scirpt (Java) for extracting the dataframes from a rectangle window. This window is the samllest window contais the ROI (any shape). Each column of the Results table not only contains a time-series but also has a indicator at the beginning indicates that whether the pixel is in the ROI. 
-
-**Cell-ROI.ijm** is the ImageJ script (Java) for outline the cell.
-
-## Miscellaneous
-
-**ZXY-2.ijm** is the ImageJ scirpt (Java) for extracting the dataframes from the rectangle ROI (Required!!). Each column is a time-series for a specific pixel.
-
+**ROI-ZXY.ijm** is the ImageJ script that extract pixel-wise time-series data. It contains two macros. **Cell-ROI** is the macro that outline the cellular region. **ZXY-4** is the macro that extract the dataset for this image window. Each column of the Results table contains a time-series datasets of the corresponding pixel. Row one contains the pixel coordinate, row two contains a indicator that tell whether this pixel is in the outlined ROI (0:not; 1:yes).
 
 
 

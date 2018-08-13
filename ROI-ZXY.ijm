@@ -1,10 +1,22 @@
-macro "Z-axis Profile in XY Plane Pixel-wise" {
-	getSelectionBounds(xbase, ybase, width, height);  // get samllest rectangle that contains ROI
+macro "Cell-ROI" {
+	name = getTitle();    // Get the filename of current window
+	selectWindow(name);   // Select current window
+	run("Duplicate...", "duplicate range=1-1");  // Make a duplicate of stack 1
+	setAutoThreshold("Default dark");  // Set auto threshold with a default dark
+	run("Threshold...");   
+	run("Analyze Particles...", "size=30-150 display clear include summarize add");  // Run "Add Particle" algorithm to outline the cell 
+	selectWindow(name);   // Jump back to main window
+	roiManager("Select", 0);  // Display the ROI on the main image window
+}
+
+macro "ZXY-4" {
+    height = getHeight(); // Returns the height in pixels of the current image.
+    width = getWidth();  // Returns the width in pixels of the current image.
 	labels = newArray(width*height+1);  // Set up Header with specific length
     labels[0] = "X-Y";
     for (i=1; i<height+1; i++) {
     	for (j=1; j<width+1; j++) {
-    		labels[j+width*(i-1)] = "X" + toString(xbase+j-1) + "-" + "Y" + toString(ybase+i-1); // Assign Header with each pixel X-Y coordinates label
+    		labels[j+width*(i-1)] = "X" + toString(j-1) + "-" + "Y" + toString(i-1); // Assign Header with each pixel X-Y coordinates label
     	}
     } 
     run("Clear Results");
@@ -25,7 +37,7 @@ macro "Z-axis Profile in XY Plane Pixel-wise" {
     	setResult(labels[0], slice, toString(slice));  // Add an entry to the results table, setResult (labels[x], y, entry), x, y starts from 0.
     	for (i=1; i<height+1; i++) {
     		for (j=1; j<width+1; j++) {
-    			v = getPixel(xbase+j-1, ybase+i-1);
+    			v = getPixel(j-1, i-1);
     			setResult(labels[j+width*(i-1)], slice, v); 
     		}
     	} 
