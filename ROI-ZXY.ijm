@@ -1,10 +1,10 @@
 macro "Cell-ROI" {
 	name = getTitle();    // Get the filename of current window
 	selectWindow(name);   // Select current window
-	run("Duplicate...", "duplicate range=1-1");  // Make a duplicate of stack 1
+    run("Z Project...", "projection=[Sum Slices]"); // Calcualte the summation image of all slices 
 	setAutoThreshold("Default dark");  // Set auto threshold with a default dark
 	run("Threshold...");   
-	run("Analyze Particles...", "size=30-150 display clear include summarize add");  // Run "Add Particle" algorithm to outline the cell 
+	run("Analyze Particles...", "size=30-150 display clear include summarize add");  // Run "Add Particle" algorithm to outline the cell based on the summation image
 	selectWindow(name);   // Jump back to main window
 	roiManager("Select", 0);  // Display the ROI on the main image window
 }
@@ -16,7 +16,7 @@ macro "ZXY-4" {
     labels[0] = "X-Y";
     for (i=1; i<height+1; i++) {
     	for (j=1; j<width+1; j++) {
-    		labels[j+width*(i-1)] = "X" + toString(j-1) + "-" + "Y" + toString(i-1); // Assign Header with each pixel X-Y coordinates label
+    		labels[j+width*(i-1)] = "X" + toString(j-1) + "." + "Y" + toString(i-1); // Assign Header with each pixel X-Y coordinates label
     	}
     } 
     run("Clear Results");
@@ -24,9 +24,9 @@ macro "ZXY-4" {
     for (i=1; i<height+1; i++) {
     	for (j=1; j<width+1; j++) {
     		if (selectionContains(j, i)) 
-    			setResult(labels[j+width*(i-1)], 0, 1);  // Set value to 1 if yes
+    			setResult(labels[j+width*(i-1)], 0, 2);  // Set value to 2 if pixel is in the selection
     		else
-    			setResult(labels[j+width*(i-1)], 0, 0);  // Set value to 0 if no
+    			setResult(labels[j+width*(i-1)], 0, 1);  // Set value to 1 if pixel is not in the selection
     	}
     } 
 
@@ -53,7 +53,7 @@ macro "ZXY-2" {
     labels[0] = "X-Y";
     for (i=1; i<height+1; i++) {
         for (j=1; j<width+1; j++) {
-            labels[j+width*(i-1)] = "X" + toString(j-1) + "-" + "Y" + toString(i-1); // Assign Header with each pixel X-Y coordinates label
+            labels[j+width*(i-1)] = "X" + toString(j-1) + "." + "Y" + toString(i-1)+".BG"; // Assign Header with each pixel X-Y coordinates label
         }
     } 
     run("Clear Results");
