@@ -13,17 +13,17 @@ macro "ZXY-4" {
     height = getHeight(); // Returns the height in pixels of the current image.
     width = getWidth();  // Returns the width in pixels of the current image.
 	labels = newArray(width*height+1);  // Set up Header with specific length
-    labels[0] = "X-Y";
+    labels[0] = "X-Y";  // The Header is a 1-D array
     for (i=1; i<height+1; i++) {
     	for (j=1; j<width+1; j++) {
-    		labels[j+width*(i-1)] = "X" + toString(j-1) + "." + "Y" + toString(i-1); // Assign Header with each pixel X-Y coordinates label
+    		labels[j+width*(i-1)] = "X" + toString(j-1) + "." + "Y" + toString(i-1); // Assign Header with each pixel X-Y coordinates label, the pixel is (j-1, i-1).
     	}
     } 
     run("Clear Results");
     setResult(labels[0], 0, "Selection");  // Assign "Selection" row to indicate whether the pixel is in the cellular region (ROI)
     for (i=1; i<height+1; i++) {
     	for (j=1; j<width+1; j++) {
-    		if (selectionContains(j, i)) 
+    		if (selectionContains(j-1, i-1)) // The pixel is (j-1, i-1).
     			setResult(labels[j+width*(i-1)], 0, 2);  // Set value to 2 if pixel is in the selection
     		else
     			setResult(labels[j+width*(i-1)], 0, 1);  // Set value to 1 if pixel is not in the selection
@@ -37,7 +37,7 @@ macro "ZXY-4" {
     	setResult(labels[0], slice, toString(slice));  // Add an entry to the results table, setResult (labels[x], y, entry), x, y starts from 0.
     	for (i=1; i<height+1; i++) {
     		for (j=1; j<width+1; j++) {
-    			v = getPixel(j-1, i-1);
+    			v = getPixel(j-1, i-1);  // The pixel is (j-1, i-1).
     			setResult(labels[j+width*(i-1)], slice, v); 
     		}
     	} 
@@ -53,7 +53,7 @@ macro "ZXY-2" {
     labels[0] = "X-Y";
     for (i=1; i<height+1; i++) {
         for (j=1; j<width+1; j++) {
-            labels[j+width*(i-1)] = "X" + toString(j-1) + "." + "Y" + toString(i-1)+".BG"; // Assign Header with each pixel X-Y coordinates label
+            labels[j+width*(i-1)] = "X" + toString(j-1) + "." + "Y" + toString(i-1)+".BG"; // Assign Header with each pixel X-Y coordinates label, the pixel is (j-1, i-1).
         }
     } 
     run("Clear Results");
@@ -71,7 +71,7 @@ macro "ZXY-2" {
         setResult(labels[0], slice, toString(slice));  // Add an entry to the results table, setResult (labels[x], y, entry), x, y starts from 0.
         for (i=1; i<height+1; i++) {
             for (j=1; j<width+1; j++) {
-                v = getPixel(j-1, i-1);
+                v = getPixel(j-1, i-1); // The pixel is (j-1, i-1).
                 setResult(labels[j+width*(i-1)], slice, v); 
             }
         } 
