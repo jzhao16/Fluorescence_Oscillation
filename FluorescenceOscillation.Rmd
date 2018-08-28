@@ -1,7 +1,7 @@
 ---
 title: 'T-Cell Fluorescence Oscillation Analysis'
 author: "Jing Zhao"
-date: "8/21/2018"
+date: "8/28/2018"
 output:
   html_document: default
 ---
@@ -14,6 +14,7 @@ library(dplyr)
 library(reshape)
 library("scales")
 library(gridExtra)
+library(DescTools)
 library("EBImage")
 ```
 
@@ -126,21 +127,37 @@ print.df.info <- function(df1, type_name) {
   print(paste("The dimension of image frame is", x_pixels,"*", y_pixels,"."))
 }
 
+split.rowname.xy <- function(df) {
+  rowNames <- rownames(df)
+  df.xy <- data.frame(t(data.frame(lapply(rowNames, row.xy))))
+  names(df.xy) <- c("X","Y")
+  df[["X"]] <- df.xy[["X"]]
+  df[["Y"]] <- df.xy[["Y"]]
+  return(df)
+}
+
 ```
 
 ## Imaging Data Loading and Preprocessing 
 
 ```{r, warning=FALSE, fig.height = 5, fig.width = 4, fig.align ="center"}
 # Load data matrix
-df_ROI <- read.csv("Cell-1.csv")       
+df_ROI <- read.csv("Cell-3.csv")       
 # Remove first two columns, Header is the pixel coordinate in "x.y"" format
 df1_ROI <- df_ROI[,3:dim(df_ROI)[2]]
 # Report information of cell imaging dafaframe 
 print.df.info(df1_ROI, "cell (ROI + Peripheral)")
 cat("\n")
 
+# Copy the dataframe for plotting ROI sum fluorescence image
+df_ROI_cp <- df1_ROI[-1,]
+df_ROI_sum <- data.frame(t(df_ROI_cp[1,]))
+df_ROI_sum[[1]] <- colSums(df_ROI_cp)
+df_ROI_sum <- split.rowname.xy(df_ROI_sum)
+names(df_ROI_sum) <- c("Sum", "X", "Y")
+
 # Load data matrix
-df_BG <- read.csv("BG-1.csv")    
+df_BG <- read.csv("BG-3.csv")    
 # Remove first two columns, Header is the pixel coordinate in "x.y"" format
 df1_BG <- df_BG[,3:dim(df_BG)[2]]
 # Report information of background imaging dafaframe 
@@ -231,9 +248,12 @@ df_stats[["Period"]] <- apply(df_stats[,c('P1','P2','P3','P4')], 1, FUN=max)
 df_stats[['Period']] <- round(df_stats[['Period']], digits=1)
 
 # Count the number of non-zero terms in each column of df_stats
-colSums(df_stats[,c(1,2,4,6,8,10,14)] != 0)    
+print("The number of non-zero rows of each column in the statistics dataframe:")
+colSums(df_stats[,c(1,2,4,6,8,10,14)] != 0) 
+
 # Show unique values of period
-unique(df_stats[["Period"]])
+print("The periodic values obtained from analysis are:")
+sort(unique(df_stats[["Period"]]))
 
 ```
 
@@ -247,31 +267,54 @@ df_stats_heatmap <- df_stats[df_stats$Indicator == 1 | df_stats$Indicator == 2, 
 # Cut-off background pixel's period value
 df_stats_heatmap[df_stats_heatmap$Indicator == 1,]$Period <- 0
 
-df_stats_heatmap[['Period_32']] <- 0
-df_stats_heatmap[df_stats_heatmap$P1 == 32 | df_stats_heatmap$P2 == 32 | df_stats_heatmap$P3 == 32 | df_stats_heatmap$P4 == 32,]$Period_32 <- 32
-df_stats_heatmap[df_stats_heatmap$Indicator == 1,]$Period_32 <- 0
+df_stats_heatmap[df_stats_heatmap$Period == 0,]$Period <- 0
+df_stats_heatmap[df_stats_heatmap$Period == 32,]$Period <- 1
+df_stats_heatmap[df_stats_heatmap$Period == 21.3,]$Period <- 2
+df_stats_heatmap[df_stats_heatmap$Period == 16,]$Period <- 3
+df_stats_heatmap[df_stats_heatmap$Period == 12.8,]$Period <- 4
+df_stats_heatmap[df_stats_heatmap$Period == 10.7,]$Period <- 5
+df_stats_heatmap[df_stats_heatmap$Period == 9.1,]$Period <- 6
 
-df_stats_heatmap[['Period_16']] <- 0
-df_stats_heatmap[df_stats_heatmap$P1 == 16 | df_stats_heatmap$P2 == 16 | df_stats_heatmap$P3 == 16 | df_stats_heatmap$P4 == 16,]$Period_16 <- 16
-df_stats_heatmap[df_stats_heatmap$Indicator == 1,]$Period_16 <- 0
-
-df_stats_heatmap[['Period_9']] <- 0
-df_stats_heatmap[df_stats_heatmap$P1 == 9.1 | df_stats_heatmap$P2 == 9.1 | df_stats_heatmap$P3 == 9.1 | df_stats_heatmap$P4 == 9.1,]$Period_9 <- 9.1
-df_stats_heatmap[df_stats_heatmap$Indicator == 1,]$Period_9 <- 0
+#df_stats_heatmap[['Period_9']] <- 0
+#df_stats_heatmap[df_stats_heatmap$P1 == 9.1 | df_stats_heatmap$P2 == 9.1 | df_stats_heatmap$P3 == 9.1 | #df_stats_heatmap$P4 == 9.1,]$Period_9 <- 9.1
+#df_stats_heatmap[df_stats_heatmap$Indicator == 1,]$Period_9 <- 0
 
 # Heatmap plot 
+
+# Cell-1 Sum Fluorescence Intensity Image
+matrix_sum <- as.matrix.xtabs(xtabs( Sum ~ X+Y, data=df_ROI_sum))
+matrix_sum <- normalize(matrix_sum)
+m3_sum <- abind(matrix_sum,matrix_sum,matrix_sum,along=3)
+img_sum <- Image(m3_sum,colormode='Grayscale')
+#display(img_sum, method = 'raster', all=TRUE)
+
+# Cell-1 Periodic value and distribution 
+matrix_period <- as.matrix.xtabs(xtabs( Period ~ X+Y, data=df_stats_heatmap))/8
+m_period <- abind(matrix_period,matrix_period,matrix_period,along=3)
+img_period <- Image(m_period,colormode = 'Grayscale')
+img_period_map <- rgbImage(green=img_period)
+
+#jet.colors = colorRampPalette(c("#000000", "#00007F", "blue", "#007FFF", "cyan", "#7FFF7F", "yellow", "#FF7F00"))
+#img_period_map <- colormap(img_period, jet.colors(256))
+#y = gblur(img_period_map, sigma=0.6)
+#display(img_period_map, method= 'raster')
+
+# Overlaid Cell-1 fluorescence summation image and Periodic values ditribution
+#img <- rgbImage(blue=img_sum, green=img_sum+img_period, red=img_sum)
+img <- rgbImage(blue=m3_sum, green=m3_sum+m_period, red=m3_sum)
+display(img, method = 'raster')
+
+```
+
+```{r, echo = FALSE, eval=FALSE}
+# Heatmap plot 
+
 ggplot(data = df_stats_heatmap, aes(x=X, y=Y, fill=Period)) + scale_y_continuous(trans = "reverse") +
   geom_tile() + scale_fill_gradient(low="Black", high="Dodgerblue", guide = 'legend')  + theme_void()
 
 ggplot(data = df_stats_heatmap, aes(x=X, y=Y, fill=Period)) + scale_y_continuous(trans = "reverse") +
   geom_tile() + scale_fill_gradientn(colours= c("black", "dodgerblue4","dodgerblue3","dodgerblue2", "dodgerblue","deepskyblue" ),
                        values=rescale(c(0, 9, 12, 16,  21, 30)), guide = 'legend')  + theme_void()
-
-ggplot(data = df_stats_heatmap, aes(x=X, y=Y, fill=Period_32)) + scale_y_continuous(trans = "reverse") + geom_raster() +  scale_fill_gradient(low="Black", high="Dodgerblue", guide = 'legend') + theme_void()
-
-ggplot(data = df_stats_heatmap, aes(x=X, y=Y, fill=Period_16)) + scale_y_continuous(trans = "reverse") + geom_raster() +  scale_fill_gradient(low="Black", high="Dodgerblue", guide = 'legend') + theme_void()
-
-ggplot(data = df_stats_heatmap, aes(x=X, y=Y, fill=Period_9)) + scale_y_continuous(trans = "reverse") + geom_raster() +  scale_fill_gradient(low="Black", high="Dodgerblue", guide = 'legend') + theme_void()
 
 ```
 
@@ -290,6 +333,7 @@ df_stats_BG <- df_stats[which(df_stats$Indicator == 0),]
 ## Plotting Statistics
 **Histogram**
 ```{r, warning=FALSE, fig.height = 4, fig.width = 7,fig.align="center"}
+
 df_cmd <- rbind(df_stats_Cell,df_stats_RI, df_stats_BG)
 
 h1 <- ggplot(df_cmd, aes(x=I_bar))  +
@@ -395,13 +439,13 @@ p6 <- ggplot(df_stats_factor_RI, aes(y = I_bar, x = Period)) + geom_boxplot(fill
 
 grid.arrange(p5,p6,p7,ncol=3)
 
-p7 <- ggplot(df_stats_factor_Cell, aes(y = I_std, x = Period)) + geom_boxplot(fill='blue',alpha=0.6)  + scale_y_continuous(limits = c(50, 200)) +
+p7 <- ggplot(df_stats_factor_Cell, aes(y = I_std, x = Period)) + geom_boxplot(fill='blue',alpha=0.6)  + scale_y_continuous(limits = c(50, 180)) +
     stat_summary(fun.y=mean, geom="point", shape=5, size=2) + ggtitle("Cell ROI") + ylab("Standard Deviation of Fluorescence Intensity") + xlab("Period (Frames)")
 
-p9 <- ggplot(df_stats_factor_BG, aes(y = I_std, x = Period)) + geom_boxplot(fill='red',alpha=0.6) + scale_y_continuous(limits = c(50, 200)) +
+p9 <- ggplot(df_stats_factor_BG, aes(y = I_std, x = Period)) + geom_boxplot(fill='red',alpha=0.6) + scale_y_continuous(limits = c(50, 180)) +
     stat_summary(fun.y=mean, geom="point", shape=5, size=2) + ggtitle("Background") + ylab("Standard Deviation of Fluorescence Intensity") + xlab("Period (Frames)")
 
-p8 <- ggplot(df_stats_factor_RI, aes(y = I_std, x = Period)) + geom_boxplot(fill='green',alpha=0.6) + scale_y_continuous(limits = c(50, 200)) +
+p8 <- ggplot(df_stats_factor_RI, aes(y = I_std, x = Period)) + geom_boxplot(fill='green',alpha=0.6) + scale_y_continuous(limits = c(50, 180)) +
     stat_summary(fun.y=mean, geom="point", shape=5, size=2) + ggtitle("Peripheral") + ylab("Standard Deviation of Fluorescence Intensity") + xlab("Period (Frames)")
 
 grid.arrange(p7,p8,p9,ncol=3)
