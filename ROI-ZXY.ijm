@@ -47,8 +47,7 @@ macro "ZXY-4" {
 }
 
 macro "ZXY-2" {
-    height = getHeight(); // Returns the height in pixels of the current image.
-    width = getWidth();  // Returns the width in pixels of the current image.
+    getSelectionBounds(xbase, ybase, width, height);  // Obtain width and height of the rectangle selection 
     labels = newArray(width*height+1);  // Set up Header with specific length
     labels[0] = "X-Y";
     for (i=1; i<height+1; i++) {
@@ -71,7 +70,7 @@ macro "ZXY-2" {
         setResult(labels[0], slice, toString(slice));  // Add an entry to the results table, setResult (labels[x], y, entry), x, y starts from 0.
         for (i=1; i<height+1; i++) {
             for (j=1; j<width+1; j++) {
-                v = getPixel(j-1, i-1); // The pixel is (j-1, i-1).
+                v = getPixel(xbase+j-1, ybase+i-1); // The pixel is (j-1, i-1).
                 setResult(labels[j+width*(i-1)], slice, v); 
             }
         } 
