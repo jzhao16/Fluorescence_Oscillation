@@ -16,7 +16,7 @@ macro "ZXY-4" {
     labels[0] = "X-Y";  // The Header is a 1-D array
     for (i=1; i<height+1; i++) {
     	for (j=1; j<width+1; j++) {
-    		labels[j+width*(i-1)] = "X" + toString(j-1) + "." + "Y" + toString(i-1); // Assign Header with each pixel X-Y coordinates label, the pixel is (j-1, i-1).
+    		labels[j+width*(i-1)] = "X" + toString(j-1) + "." + "Y" + toString(i-1)+".BG"; // Assign Header with each pixel X-Y coordinates label, the pixel is (j-1, i-1).
     	}
     } 
     run("Clear Results");
@@ -52,7 +52,7 @@ macro "ZXY-2" {
     labels[0] = "X-Y";
     for (i=1; i<height+1; i++) {
         for (j=1; j<width+1; j++) {
-            labels[j+width*(i-1)] = "X" + toString(j-1) + "." + "Y" + toString(i-1)+".BG"; // Assign Header with each pixel X-Y coordinates label, the pixel is (j-1, i-1).
+            labels[j+width*(i-1)] = "X" + toString(xbase+j-1) + "." + "Y" + toString(ybase+i-1)+".BG"; // Assign Header with each pixel X-Y coordinates label, the pixel is (j-1, i-1).
         }
     } 
     run("Clear Results");
