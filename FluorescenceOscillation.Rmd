@@ -152,7 +152,7 @@ print.df.info <- function(df1, type_name) {
 
 ```{r, warning=FALSE, fig.height = 5, fig.width = 4, fig.align ="center"}
 # Load data matrix
-df_ROI <- read.csv("Cell-1-Big.csv")       
+df_ROI <- read.csv("Cell-4.csv")       
 # Remove first two columns, Header is the pixel coordinate in "x.y"" format
 df1_ROI <- df_ROI[,3:dim(df_ROI)[2]]
 # Report information of cell imaging dafaframe 
@@ -269,8 +269,8 @@ print("The number of non-zero rows of each column in the statistics dataframe:")
 colSums(df_stats[,c(1,2,4,6,8,10,14)] != 0) 
 
 # Show unique values of period
-print("The periodic values obtained from analysis are:")
-sort(unique(df_stats[["Period"]]))
+#print("The periodic values obtained from analysis are:")
+#sort(unique(df_stats[["Period"]]))
 
 ```
 
@@ -298,13 +298,19 @@ img_period <- Image(m_period,colormode = 'Grayscale')
 img_period_map <- rgbImage(green=img_period)
 display(img_period_map, method= 'raster')
 
-
 # Cell-1 Sum Fluorescence Intensity Image
 matrix_sum <- as.matrix.xtabs(xtabs( Sum ~ X+Y, data=df_ROI_sum))
 matrix_sum <- normalize(matrix_sum)
 m3_sum <- abind(matrix_sum,matrix_sum,matrix_sum,along=3)
 img_sum <- Image(m3_sum,colormode='Color')
 display(img_sum, method = 'raster', all=TRUE)
+
+# NB Analysis
+matrix_NB <- as.matrix.xtabs(xtabs( (I_std)^2/I_bar ~ X+Y, data=df_stats_heatmap))
+matrix_NB <- normalize(matrix_NB)
+m3_NB <- abind(matrix_NB,matrix_NB,matrix_NB,along=3)
+img_NB <- Image(m3_NB,colormode='Color')
+display(img_NB, method = 'raster', all=TRUE)
 
 
 #jet.colors = colorRampPalette(c("#000000", "#00007F", "blue", "#007FFF", "cyan", "#7FFF7F", "yellow", "#FF7F00"))
@@ -481,7 +487,7 @@ for (i in 1:dim(df_stats_Cell_sample)[1]) {
     df_pixel_dt <- data.frame(lm.detrend(df_pixel))
     p2 <- ts_plot(df_pixel_dt, paste(header, "Linear Detrend Fluorescent Intensity Time Series"))
     # Plot spectrum periodgram of detrend and normalized fluorescent signal (before SSA)
-    ssp_dt <- spectrum(df_pixel_dt, plot=FALSE)
+    ssp_dt <- spectrum(df_pixel_dt["Intensity"], plot=FALSE)
     df_ssp_dt <- data.frame(cbind(ssp_dt$spec,round(1/ssp_dt$freq,digits = 1)))
   names(df_ssp_dt) <- c('Spec_density','Period')
     p3 <- ggplot(df_ssp_dt[4:125,], aes(x=Period, y=Spec_density)) + geom_bar(stat="identity", color="black") + ylab("Spectral Density")
