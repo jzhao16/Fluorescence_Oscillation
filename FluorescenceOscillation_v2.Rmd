@@ -1,13 +1,27 @@
 ---
 title: 'T-Cell Fluorescence Oscillation Analysis'
 author: "Jing Zhao"
-date: "9/25/2018"
+date: "10/10/2018"
 output:
   html_document: default
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::knit_hooks$set(
+  timeit = local({
+  now = NULL
+  function(before, options) {
+    if (before) {
+      now <<- Sys.time()
+    } else {
+      res = difftime(Sys.time(), now)
+      now <<- NULL
+      # use options$label if you want the chunk label as well
+      paste('Time for this code chunk:', as.character(res))
+    }
+  }})
+)
+
 library(Rssa)
 library(ggplot2)
 library(dplyr)
@@ -16,22 +30,26 @@ library("scales")
 library(gridExtra)
 library(DescTools)
 library("EBImage")
+
 ```
 
 ## Set analysis parameters 
-```{r}
+```{r, timeit = TRUE}
 # Set ssa window length
 window = 124
 # Set lag for autocorrelation
 lag = 64
 # Threshold R-square value to screen sinusoid curve
-threshold = 0.95
+threshold = 0.98
 # Exposure Time (Frame rate, per ms)
 frame_rate = 800
+# Period Constraints (Frame rate)
+low_pf = 8
+high_pf = 120
 ```
 
 ## Define Functions
-```{r}
+```{r,timeit = TRUE}
 # Function: Extract x,y coordiantes from each Header
 row.xy <- function(string){
   xx <- strsplit(string,"[.]")[[1]][1]
@@ -64,7 +82,7 @@ lm.detrend <- function(df) {
 # Function: Pixel-wise screening for sinusoid oscillation
 sine.screen <- function(ts, per, threshold) {
   # The Period screening criteria !!!
-  if ((per < 100) & (per > 8)) {
+  if ((per < high_pf) & (per > low_pf)) {
       acf <- acf(ts, lag.max = lag, plot = FALSE)
       # Extract the acf and time pairs 
       y <- acf$acf[1:lag]   # acf value
@@ -93,7 +111,7 @@ ts_plot <- function (col, title){
   names(df) <- "Intensity"
   tt <- seq(1,dim(df)[1],1)* frame_rate/1000
   df[["Time"]] <- tt
-  p1 <- ggplot(df, aes(x=Time, y=Intensity))  + geom_line() + ggtitle(title)
+  p1 <- ggplot(df, aes(x=Time, y=Intensity))  + geom_line() + ggtitle(title) + xlab("Time (s)")
   return(p1)
 }
 
@@ -113,19 +131,19 @@ sine.screen.plot <- function(ts, per, threshold, header) {
   reslm <- lm(y ~  sine + cos + t * sine + t * cos, data = df_sine)
   
   # The sinusoid screening criteria !!! 
-  if (summary(reslm)$r.squared >= threshold & (per < 100) & (per > 8)) {
+  if (summary(reslm)$r.squared >= threshold & (per < high_pf) & (per > low_pf)) {
     # Plot the spectral periodgram of the subset singal
-    df_ssp <- data.frame(cbind(ssp$spec,round(1/ssp$freq,digits = 1)))
+    df_ssp <- data.frame(cbind(ssp$spec,round(1/ssp$freq*frame_rate/1000,digits = 2)))
     names(df_ssp) <- c('Spec','Period')
-    p_spec <- ggplot(df_ssp[4:125,], aes(x=Period, y=Spec)) + geom_bar(stat="identity", color="black") + xlab("Period (Frame)") + ylab("Spectral Density") + ggtitle(paste(header, "Spectral Periodgram,","Period =", signif(per,digits=4)))
+    p_spec <- ggplot(df_ssp[4:125,], aes(x=Period, y=Spec)) + geom_bar(stat="identity", color="black") + xlab("Period (s)") + ylab("Spectral Density") + ggtitle(paste(header, "Periodgram,","Period =", signif(per*frame_rate/1000,digits=4)))
     
     # Plot reconstrcuted vector calculated from SSA
     p_uu <- ts_plot(ts, paste(header, "Principal Time-Series"))
-    title <- paste(header, "ACF,", "Period =", signif(per,digits=4), ",", "R-square =", toString(signif(summary(reslm)$r.squared,digits = 3)))
+    title <- paste(header, "ACF,", "Period =", signif(per*frame_rate/1000,digits=4), ",", "R-square =", toString(signif(summary(reslm)$r.squared,digits = 3)))
     
     df_sine[['y_hat']] <- data.frame(fitted(reslm))
 
-    p_sine <-ggplot(df_sine, aes(x = t)) + geom_point(aes(y=y), shape = 1) + geom_line(aes(y=y_hat, color = "red")) + xlab("Frame") + ylab("ACF") + ggtitle(title)
+    p_sine <-ggplot(df_sine, aes(x = t*frame_rate/1000)) + geom_point(aes(y=y), shape = 1) + geom_line(aes(y=y_hat, color = "red")) + xlab("Lag (s)") + ylab("ACF") + ggtitle(title)
     grid.arrange(p_uu,p_spec,p_sine,ncol=1)
   } 
 }
@@ -145,14 +163,14 @@ print.df.info <- function(df1, type_name) {
 }
 
 
-
 ```
 
 ## Imaging Data Loading and Preprocessing 
 
-```{r, warning=FALSE, fig.height = 5, fig.width = 4, fig.align ="center"}
+```{r, warning=FALSE, fig.height = 5, fig.width = 4, fig.align ="center", timeit = TRUE}
+
 # Load data matrix
-df_ROI <- read.csv("Cell-4.csv")       
+df_ROI <- read.csv("Cell-1.csv")       
 # Remove first two columns, Header is the pixel coordinate in "x.y"" format
 df1_ROI <- df_ROI[,3:dim(df_ROI)[2]]
 # Report information of cell imaging dafaframe 
@@ -274,9 +292,27 @@ colSums(df_stats[,c(1,2,4,6,8,10,14)] != 0)
 
 ```
 
+## Write and save df_stats into csv file
+```{r}
+write.csv(df_stats[df_stats$Indicator == 0,], file = "BG-1_stats.csv")
+write.csv(df_stats[df_stats$Indicator == 1 | df_stats$Indicator == 2,], file = "Cell-1_stats.csv")
+```
+
+## Load Pre-calculated df_stats dataframe 
+```{r}
+df_stats_cell <- read.csv("Cell-1_stats.csv", row.names = 1)    
+df_stats_BG <- read.csv("BG-1_stats.csv", row.names = 1)
+df_stats <- rbind(df_stats_cell,df_stats_BG)
+
+# Count the number of non-zero terms in each column of df_stats
+print("The number of non-zero rows of each column in the statistics dataframe:")
+colSums(df_stats[,c(1,2,4,6,8,10,14)] != 0) 
+```
+
+
 ## ROI Heatmap Plotting 
 
-```{r, warning=FALSE, fig.height = 3, fig.width = 4, fig.align ="center"}
+```{r, warning=FALSE, fig.height = 3, fig.width = 4, fig.align ="center",eval = FALSE}
 
 # Heatmap plot 
 # Make a copy of df_stats for plotting heatmap
@@ -292,11 +328,66 @@ display(img_period_map, method= 'raster')
 # Cut-off background pixel's period value (with Cell outline mask)
 df_stats_heatmap[df_stats_heatmap$Indicator == 1,]$Period <- 0
 
-matrix_period <- as.matrix.xtabs(xtabs( Period ~ X+Y, data=df_stats_heatmap))/120
-m_period <- abind(matrix_period,matrix_period,matrix_period,along=3)
-img_period <- Image(m_period,colormode = 'Grayscale')
-img_period_map <- rgbImage(green=img_period)
-display(img_period_map, method= 'raster')
+matrix_period_mask <- as.matrix.xtabs(xtabs( Period ~ X+Y, data=df_stats_heatmap))/120
+m_period_mask <- abind(matrix_period_mask,matrix_period_mask,matrix_period_mask,along=3)
+img_period_mask <- Image(m_period_mask,colormode = 'Grayscale')
+img_period_map_mask <- rgbImage(green=img_period_mask)
+display(img_period_map_mask, method= 'raster')
+
+df_stats_heatmap_factor <- df_stats_heatmap
+df_stats_heatmap_factor$Period <- cut(df_stats_heatmap_factor$Period, c(-1, 7, 20, 40, 60, 80, 100, 120))
+df_stats_heatmap_factor$P1 <- cut(df_stats_heatmap_factor$P1, c(-1, 7, 20, 40, 60, 80, 100, 120))
+df_stats_heatmap_factor$P2 <- cut(df_stats_heatmap_factor$P2, c(-1, 7, 20, 40, 60, 80, 100, 120))
+df_stats_heatmap_factor$P3 <- cut(df_stats_heatmap_factor$P3, c(-1, 7, 20, 40, 60, 80, 100, 120))
+df_stats_heatmap_factor$P4 <- cut(df_stats_heatmap_factor$P4, c(-1, 7, 20, 40, 60, 80, 100, 120))
+
+df_stats_heatmap_l1 <- df_stats_heatmap
+df_stats_heatmap_l1[!(df_stats_heatmap_factor$P1 %in% c("(7,20]","(20,40]")), ]$P1 <- 0
+df_stats_heatmap_l1[!(df_stats_heatmap_factor$P2 %in% c("(7,20]","(20,40]")), ]$P2 <- 0
+df_stats_heatmap_l1[!(df_stats_heatmap_factor$P3 %in% c("(7,20]","(20,40]")), ]$P3 <- 0
+df_stats_heatmap_l1[!(df_stats_heatmap_factor$P4 %in% c("(7,20]","(20,40]")), ]$P4 <- 0
+df_stats_heatmap_l1$Period <- apply(df_stats_heatmap_l1[,c('P1','P2','P3','P4')], 1, FUN=max)
+
+# Cut-off background pixel's period value (with Cell outline mask)
+df_stats_heatmap_l1[df_stats_heatmap$Indicator == 1,]$Period <- 0
+
+matrix_period_mask_l1 <- as.matrix.xtabs(xtabs( Period ~ X+Y, data=df_stats_heatmap_l1))/120
+m_period_mask_l1 <- abind(matrix_period_mask_l1,matrix_period_mask_l1,matrix_period_mask_l1,along=3)
+img_period_mask_l1 <- Image(m_period_mask_l1,colormode = 'Grayscale')
+img_period_map_mask_l1 <- rgbImage(green=img_period_mask_l1)
+display(img_period_map_mask_l1, method= 'raster')
+
+df_stats_heatmap_l2 <- df_stats_heatmap
+df_stats_heatmap_l2[!(df_stats_heatmap_factor$P1 %in% c("(40,60]","(60,80]")), ]$P1 <- 0
+df_stats_heatmap_l2[!(df_stats_heatmap_factor$P2 %in% c("(40,60]","(60,80]")), ]$P2 <- 0
+df_stats_heatmap_l2[!(df_stats_heatmap_factor$P3 %in% c("(40,60]","(60,80]")), ]$P3 <- 0
+df_stats_heatmap_l2[!(df_stats_heatmap_factor$P4 %in% c("(40,60]","(60,80]")), ]$P4 <- 0
+df_stats_heatmap_l2$Period <- apply(df_stats_heatmap_l2[,c('P1','P2','P3','P4')], 1, FUN=max)
+
+# Cut-off background pixel's period value (with Cell outline mask)
+df_stats_heatmap_l2[df_stats_heatmap$Indicator == 1,]$Period <- 0
+
+matrix_period_mask_l2 <- as.matrix.xtabs(xtabs( Period ~ X+Y, data=df_stats_heatmap_l2))/120
+m_period_mask_l2 <- abind(matrix_period_mask_l2,matrix_period_mask_l2,matrix_period_mask_l2,along=3)
+img_period_mask_l2 <- Image(m_period_mask_l2,colormode = 'Grayscale')
+img_period_map_mask_l2 <- rgbImage(green=img_period_mask_l2)
+display(img_period_map_mask_l2, method= 'raster')
+
+df_stats_heatmap_l3 <- df_stats_heatmap
+df_stats_heatmap_l3[!(df_stats_heatmap_factor$P1 %in% c("(80,100]","(100,120]")), ]$P1 <- 0
+df_stats_heatmap_l3[!(df_stats_heatmap_factor$P2 %in% c("(80,100]","(100,120]")), ]$P2 <- 0
+df_stats_heatmap_l3[!(df_stats_heatmap_factor$P3 %in% c("(80,100]","(100,120]")), ]$P3 <- 0
+df_stats_heatmap_l3[!(df_stats_heatmap_factor$P4 %in% c("(80,100]","(100,120]")), ]$P4 <- 0
+df_stats_heatmap_l3$Period <- apply(df_stats_heatmap_l3[,c('P1','P2','P3','P4')], 1, FUN=max)
+
+# Cut-off background pixel's period value (with Cell outline mask)
+df_stats_heatmap_l3[df_stats_heatmap$Indicator == 1,]$Period <- 0
+
+matrix_period_mask_l3 <- as.matrix.xtabs(xtabs( Period ~ X+Y, data=df_stats_heatmap_l3))/120
+m_period_mask_l3 <- abind(matrix_period_mask_l3,matrix_period_mask_l3,matrix_period_mask_l3,along=3)
+img_period_mask_l3 <- Image(m_period_mask_l3,colormode = 'Grayscale')
+img_period_map_mask_l3 <- rgbImage(green=img_period_mask_l3)
+display(img_period_map_mask_l3, method= 'raster')
 
 # Cell-1 Sum Fluorescence Intensity Image
 matrix_sum <- as.matrix.xtabs(xtabs( Sum ~ X+Y, data=df_ROI_sum))
@@ -320,7 +411,7 @@ display(img_NB, method = 'raster', all=TRUE)
 
 # Overlay Cell-1 fluorescence summation image and Periodic values ditribution
 #img <- rgbImage(blue=img_sum, green=img_sum+img_period, red=img_sum)
-img <- rgbImage(blue=m3_sum, green=m3_sum+m_period, red=m3_sum)
+img <- rgbImage(blue=m3_sum, green=m3_sum+m_period_mask, red=m3_sum)
 display(img, method = 'raster')
 
 
@@ -347,7 +438,7 @@ ggplot(data = df_stats_heatmap, aes(x=X, y=Y, fill=Period)) + scale_y_continuous
 
 ## Prepare Dataframe for Plotting the Statistics 
 
-```{r}
+```{r,eval = FALSE}
 
 # Divide the df_stats into Cellular region and BG region according to indicator
 df_stats_Cell <- df_stats[which(df_stats$Indicator == 2),]
@@ -358,7 +449,7 @@ df_stats_BG <- df_stats[which(df_stats$Indicator == 0),]
 
 ## Plotting Statistics
 **Histogram**
-```{r, warning=FALSE, fig.height = 4, fig.width = 7,fig.align="center"}
+```{r, warning=FALSE, fig.height = 4, fig.width = 7,fig.align="center",eval = FALSE}
 
 df_cmd <- rbind(df_stats_Cell,df_stats_RI, df_stats_BG)
 
@@ -382,7 +473,7 @@ grid.arrange(h1,h2,ncol=2)
 ```
 
 **Scatter Plot**
-```{r,warning=FALSE, fig.height = 7, fig.width = 7, fig.align="center"}
+```{r,warning=FALSE, fig.height = 7, fig.width = 7, fig.align="center",eval = FALSE}
   
 sp1 <- ggplot(df_cmd, aes(y = I_bar, x = E1))  +
   geom_point(data = df_stats_Cell, color = "blue", size=0.5, alpha =0.3) +
@@ -418,12 +509,12 @@ grid.arrange(sp1,sp2,sp3,sp4,ncol=2)
 ```
 
 **Barplot**
-```{r, warning=FALSE, fig.height = 4, fig.width = 6, fig.align="center"}
+```{r, warning=FALSE, fig.height = 4, fig.width = 6, fig.align="center",eval = FALSE}
 
 ggplot(df_cmd, aes(x=Period))  + scale_x_continuous(limits = c(8, 120)) + 
-  geom_histogram(data = df_stats_Cell, aes(y=..count../sum(..count..)), colour="blue", fill = "blue", alpha =0.4, binwidth = 6) +
-  geom_histogram(data = df_stats_RI, aes(y=..count../sum(..count..)), colour="green", fill = "green", alpha =0.4, binwidth = 6) +
-  geom_histogram(data = df_stats_BG, aes(y=..count../sum(..count..)), colour="red", fill = "red", alpha =0.4, binwidth = 6) +
+  geom_histogram(data = df_stats_Cell, aes(y=..count../sum(..count..)), colour="blue", fill = "blue", alpha =0.4, binwidth = 2) +
+  geom_histogram(data = df_stats_RI, aes(y=..count../sum(..count..)), colour="green", fill = "green", alpha =0.4, binwidth = 2) +
+  geom_histogram(data = df_stats_BG, aes(y=..count../sum(..count..)), colour="red", fill = "red", alpha =0.4, binwidth = 2) +
   facet_grid(Indicator ~ .) +
   xlab("Period") +
   ylab("Counts Percentage")
@@ -432,12 +523,14 @@ ggplot(df_cmd, aes(x=Period))  + scale_x_continuous(limits = c(8, 120)) +
 
 
 
-```{r,warning=FALSE, fig.height = 4, fig.width = 8, fig.ncol=2, fig.align="center"}
+```{r,warning=FALSE, fig.height = 4, fig.width = 8, fig.ncol=2, fig.align="center",eval = FALSE}
 # Make a df_stats copy for factors plotting
 df_stats_factor <- df_stats
 
-df_stats_factor$Period <- cut(df_stats_factor$Period, c(-1, 7, 20, 40, 60, 80, 105))
+df_stats_factor$Period <- cut(df_stats_factor$Period, c(-1, 7, 20, 40, 60, 80, 100, 120))
 
+df_stats[df_stats_factor$Period %in% "(7,20]", ]
+           
 df_stats_factor_Cell <- df_stats_factor[which(df_stats_factor$Indicator == 2),]
 df_stats_factor_RI <- df_stats_factor[which(df_stats_factor$Indicator == 1),]
 df_stats_factor_BG <- df_stats_factor[which(df_stats_factor$Indicator == 0),]
@@ -466,9 +559,109 @@ grid.arrange(p7,p8,p9,ncol=3)
 
 ```
 
+
+## Checking Individual Pixel
+
+```{r, echo = FALSE, timeit = TRUE}
+
+# Input of pixel header
+pixel.header <- "X50.Y59"
+# Load single time-series from df1
+df_pixel <- df2[pixel.header]
+
+# Plot detrend and normalized fluorescent intensity time-series
+df_pixel_dt <- data.frame(lm.detrend(df_pixel))
+# FFT of the detrend and normalized fluorescent intensity time-series
+ssp_dt <- spectrum(df_pixel_dt[["Intensity"]], plot=FALSE)
+# Plot the periodgram (up to 64 frames) of the detrend fluorescent intensity time-series
+df_ssp_dt <- data.frame(cbind(ssp_dt$spec,round(1/ssp_dt$freq*frame_rate/1000,digits = 1)))
+names(df_ssp_dt) <- c('Spec_density','Period')
+
+p3 <- ggplot(df_ssp_dt[4:125,], aes(x=Period, y=Spec_density)) + geom_bar(stat="identity", color="black") + ggtitle("Periodgram of Detrend Fluorescence Signal") + xlab("Period (s)")
+
+p1 <- ts_plot(df_pixel, "Raw Fluorescent Intensity Time-Series")
+p2 <- ggplot(df_pixel_dt, aes(x=Time, y=Intensity))  + geom_line() + ggtitle("Linear Detrend Fluorescent Intensity Time Series")
+grid.arrange(p1,p2,p3,ncol=1)
+
+# Conduct SSA
+s <- ssa(df_pixel_dt[["Intensity"]], L=window)   
+
+plot(s) # Eigenvalues
+plot(s, type = "vectors") # Eigenvectors
+plot(s, type = "paired") # Pairs of eigenvectors
+plot(wcor(s)) # w-correlation matrix plot
+
+plot(wcor(s, groups = as.list(1:8))) # w-correlation matrix plot
+
+recon <- reconstruct(s, groups = list(c(1:2), c(3:4),c(5:6),c(7:8)))
+
+
+phase_sine <- function (ts, per){
+  t <- seq(0,length(ts)-1)
+  df_sine <- data.frame(cbind(ts, sin(2*pi/per*t), cos(2*pi/per*t)))
+  names(df_sine) <- c('y', 'sine', 'cos')
+  reslm <- lm(y ~  sine + cos , data = df_sine)
+  print(summary(reslm))
+  
+  a2 <- reslm$coefficients[2]
+  b2 <- reslm$coefficients[3]
+  phase <- as.numeric(atan(-b2/a2)/pi)
+  
+  df_sine[['y_hat']] <- data.frame(fitted(reslm))
+
+  print(ggplot(df_sine, aes(x = t)) + geom_point(aes(y=y), shape = 1) + geom_line(aes(y=y_hat, color = "red")) + xlab("Time") + ylab("F1") )
+  
+  return(phase)
+}
+
+F1 <- recon$F1
+F2 <- recon$F2
+F3 <- recon$F3
+F4 <- recon$F4
+res <- residuals(recon)
+
+pF1<- ts_plot(F1,"F1")
+pF2<- ts_plot(F2,"F2")
+pF3<- ts_plot(F3,"F3")
+pF4<- ts_plot(F4,"F4")
+pres <- ts_plot(res,"Residue")
+
+grid.arrange(p2,pF1,pF2, ncol=1)
+grid.arrange(p2,pF3,pF4, ncol=1)
+
+per1 <- max(parestimate(s, list(1:2), method = "esprit")$periods)
+per2 <- max(parestimate(s, list(3:4), method = "esprit")$periods)
+per3 <- max(parestimate(s, list(5:6), method = "esprit")$periods)
+per4 <- max(parestimate(s, list(7:8), method = "esprit")$periods)
+
+# Extract the left matrix (time-series)
+sine.screen.plot(F1, per1, 0,"F1")
+sine.screen.plot(F2, per2, 0,"F2")
+sine.screen.plot(F3, per3, 0,"F3")
+sine.screen.plot(F4, per4, 0,"F4")
+
+phase_sine(F1[1:248], per1) 
+
+#ssp<-spectrum(F1, plot=FALSE)
+#per_fft_1 <- 1/ssp$freq[ssp$spec==max(ssp$spec)]
+#ssp<-spectrum(F2, plot=FALSE)
+#per_fft_2 <- 1/ssp$freq[ssp$spec==max(ssp$spec)]
+#ssp<-spectrum(F3, plot=FALSE)
+#per_fft_3 <- 1/ssp$freq[ssp$spec==max(ssp$spec)]
+#ssp<-spectrum(F4, plot=FALSE)
+#per_fft_4 <- 1/ssp$freq[ssp$spec==max(ssp$spec)]
+
+#sine.screen.plot(F1, per_fft_1, 0,"F1")
+#sine.screen.plot(F2, per_fft_2, 0,"F2")
+#sine.screen.plot(F3, per_fft_3, 0,"F3")
+#sine.screen.plot(F4, per_fft_4, 0,"F4")
+
+```
+
+
 ## Check through all pixels with non-zero period values
 
-```{r, warning=FALSE, fig.height = 4, fig.width = 7, fig.align="center"}
+```{r, warning=FALSE, fig.height = 4, fig.width = 7, fig.align="center", eval = FALSE}
 set.seed(15)
 df_stats_Cell <- df_stats_Cell[sample(nrow(df_stats_Cell),6),]
 df_stats_Cell_sample <- df_stats_Cell[!duplicated(df_stats_Cell[,'Period']),]
@@ -515,90 +708,6 @@ for (i in 1:dim(df_stats_Cell_sample)[1]) {
 }
 
 ```
-
-
-## Checking Individual Pixel
-
-```{r, echo = FALSE, eval = FALSE}
-
-# Input of pixel header
-pixel.header <- "X26.Y60"
-# Load single time-series from df1
-df_pixel <- df2[pixel.header]
-
-# Plot detrend and normalized fluorescent intensity time-series
-df_pixel_dt <- data.frame(lm.detrend(df_pixel))
-# FFT of the detrend and normalized fluorescent intensity time-series
-ssp_dt <- spectrum(df_pixel_dt[["Intensity"]], plot=FALSE)
-# Plot the periodgram (up to 64 frames) of the detrend fluorescent intensity time-series
-df_ssp_dt <- data.frame(cbind(ssp_dt$spec,round(1/ssp_dt$freq,digits = 1)))
-names(df_ssp_dt) <- c('Spec_density','Period')
-ggplot(df_ssp_dt[4:125,], aes(x=Period, y=Spec_density)) + geom_bar(stat="identity", color="black") + ggtitle("Spectral Periodgram of Detrend Fluorescence Signal")
-
-p1 <- ts_plot(df_pixel, "Raw Fluorescent Intensity Time-Series")
-p2 <- ggplot(df_pixel_dt, aes(x=Time, y=Intensity))  + geom_line() + ggtitle("Linear Detrend Fluorescent Intensity Time Series")
-grid.arrange(p1,p2,ncol=1)
-
-# Conduct SSA
-s <- ssa(df_pixel_dt[["Intensity"]], L=window)   
-
-plot(s) # Eigenvalues
-plot(s, type = "vectors") # Eigenvectors
-plot(s, type = "paired") # Pairs of eigenvectors
-plot(wcor(s)) # w-correlation matrix plot
-
-plot(wcor(s, groups = as.list(1:8))) # w-correlation matrix plot
-
-recon <- reconstruct(s, groups = list(c(1:2), c(3:4),c(5:6),c(7:8)))
-
-F1 <- recon$F1
-F2 <- recon$F2
-F3 <- recon$F3
-F4 <- recon$F4
-res <- residuals(recon)
-
-pF1<- ts_plot(F1,"F1")
-pF2<- ts_plot(F2,"F2")
-pF3<- ts_plot(F3,"F3")
-pF4<- ts_plot(F4,"F4")
-pres <- ts_plot(res,"Residue")
-
-grid.arrange(p2,pF1,pF2, ncol=1)
-grid.arrange(p2,pF3,pF4, ncol=1)
-
-per1 <- max(parestimate(s, list(1:2), method = "esprit")$periods)
-per1
-per11 <- max(parestimate(s, list(1:2), method = "esprit", solve.method = "tls")$periods)
-per11
-
-per2 <- max(parestimate(s, list(3:4), method = "esprit")$periods)
-per3 <- max(parestimate(s, list(5:6), method = "esprit")$periods)
-per4 <- max(parestimate(s, list(7:8), method = "esprit")$periods)
-
-
-ssp<-spectrum(F1, plot=FALSE)
-per_fft_1 <- 1/ssp$freq[ssp$spec==max(ssp$spec)]
-ssp<-spectrum(F2, plot=FALSE)
-per_fft_2 <- 1/ssp$freq[ssp$spec==max(ssp$spec)]
-ssp<-spectrum(F3, plot=FALSE)
-per_fft_3 <- 1/ssp$freq[ssp$spec==max(ssp$spec)]
-ssp<-spectrum(F4, plot=FALSE)
-per_fft_4 <- 1/ssp$freq[ssp$spec==max(ssp$spec)]
-
-# Extract the left matrix (time-series)
-sine.screen.plot(F1, per1, 0,"F1")
-sine.screen.plot(F2, per2, 0,"F2")
-sine.screen.plot(F3, per3, 0,"F3")
-sine.screen.plot(F4, per4, 0,"F4")
-
-sine.screen.plot(F1, per_fft_1, 0,"F1")
-sine.screen.plot(F2, per_fft_2, 0,"F2")
-sine.screen.plot(F3, per_fft_3, 0,"F3")
-sine.screen.plot(F4, per_fft_4, 0,"F4")
-
-```
-
-
 
 
 
