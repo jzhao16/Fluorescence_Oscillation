@@ -191,19 +191,12 @@ print.df.info <- function(df1, type_name) {
 ```{r, warning=FALSE, fig.height = 5, fig.width = 4, fig.align ="center", timeit = TRUE}
 
 # Load data matrix
-df_ROI <- read.csv("Cell-4.csv")       
+df_ROI <- read.csv("Cell-1.csv")       
 # Remove first two columns, Header is the pixel coordinate in "x.y"" format
 df1_ROI <- df_ROI[,3:dim(df_ROI)[2]]
 # Report information of cell imaging dafaframe 
 print.df.info(df1_ROI, "cell (ROI + Peripheral)")
 cat("\n")
-
-# Copy the dataframe for plotting ROI sum fluorescence image
-df_ROI_cp <- df1_ROI[-1,]
-df_ROI_sum <- data.frame(t(df_ROI_cp[1,]))
-df_ROI_sum[[1]] <- colSums(df_ROI_cp)
-df_ROI_sum <- split.rowname.xy(df_ROI_sum)
-names(df_ROI_sum) <- c("Sum", "X", "Y")
 
 # Load data matrix
 df_BG <- read.csv("BG-1.csv")    
@@ -328,7 +321,7 @@ colSums(df_stats[,c(1,2,4,7,10,13,18)] != 0)
 ## Write and save df_stats into csv file
 ```{r, timeit = TRUE}
 write.csv(df_stats[df_stats$Indicator == 0,], file = "BG-1_stats.csv")
-write.csv(df_stats[df_stats$Indicator == 1 | df_stats$Indicator == 2,], file = "Cell-4_stats.csv")
+write.csv(df_stats[df_stats$Indicator == 1 | df_stats$Indicator == 2,], file = "Cell-1_stats.csv")
 ```
 
 ## Load Pre-calculated df_stats dataframe 
@@ -357,6 +350,12 @@ matrix_period <- as.matrix.xtabs(xtabs( Period ~ X+Y, data=df_stats_heatmap))/12
 df_stats_heatmap[df_stats_heatmap$Indicator == 1,]$Period <- 0
 
 matrix_period_mask <- as.matrix.xtabs(xtabs( Period ~ X+Y, data=df_stats_heatmap))/120
+
+m_period_mask <- abind(matrix_period, matrix_period_mask, along = 3)
+img_period_mask <- Image(m_period_mask,colormode = 'Grayscale')
+img_period_map_mask <- rgbImage(green=img_period_mask)
+display(img_period_map_mask, method= 'raster', all=TRUE)
+
 
 # Divide pixels into 4 levels based on period value
 df_stats_heatmap_factor <- df_stats_heatmap
@@ -406,13 +405,13 @@ df_stats_heatmap_l3[df_stats_heatmap$Indicator == 1,]$Period <- 0
 matrix_period_mask_l3 <- as.matrix.xtabs(xtabs( Period ~ X+Y, data=df_stats_heatmap_l3))/120
 
 #  2 X 2 Display of 3 levels + Combined
-m_period_mask_cmd <- abind(matrix_period, matrix_period_mask,matrix_period_mask_l1,matrix_period_mask_l2, matrix_period_mask_l3,along = 3)
+m_period_mask_cmd <- abind(matrix_period_mask,matrix_period_mask_l1,matrix_period_mask_l2, matrix_period_mask_l3,along = 3)
 img_period_mask_cmd <- Image(m_period_mask_cmd,colormode = 'Grayscale')
 img_period_map_mask_cmd <- rgbImage(green=img_period_mask_cmd)
-display(img_period_map_mask_cmd, method= 'raster', nx = -1, all=TRUE)
+display(img_period_map_mask_cmd, method= 'raster', nx = 2, all=TRUE)
 
 # Cell-1 Sum Fluorescence Intensity Image
-matrix_sum <- as.matrix.xtabs(xtabs( Sum ~ X+Y, data=df_ROI_sum))
+matrix_sum <- as.matrix.xtabs(xtabs( I_bar ~ X+Y, data=df_stats_heatmap))
 matrix_sum <- normalize(matrix_sum)
 
 # NB Analysis
