@@ -165,7 +165,7 @@ amplitude_sel <- function(df_stats){
       df_stats[19] <- df_stats[14]
       } 
   } else {
-      df_stats[19] <- max(df_stats[5],df_stats[8],df_stats[11],df_stats[14])
+      df_stats[19] <- 0
   }
 }
 
@@ -188,7 +188,7 @@ print.df.info <- function(df1, type_name) {
 
 ## Imaging Data Loading and Preprocessing 
 
-```{r, warning=FALSE, fig.height = 5, fig.width = 4, fig.align ="center", timeit = TRUE}
+```{r, warning=FALSE, fig.height = 5, fig.width = 4, fig.align ="center", timeit = TRUE, eval=FALSE}
 
 # Load data matrix
 df_ROI <- read.csv("Cell-1.csv")       
@@ -199,7 +199,7 @@ print.df.info(df1_ROI, "cell (ROI + Peripheral)")
 cat("\n")
 
 # Load data matrix
-df_BG <- read.csv("BG-1.csv")    
+df_BG <- read.csv("BG-2.csv")    
 # Remove first two columns, Header is the pixel coordinate in "x.y"" format
 df1_BG <- df_BG[,3:dim(df_BG)[2]]
 # Report information of background imaging dafaframe 
@@ -220,7 +220,7 @@ df2 <- data.frame(t(df2))
 
 ## ROI Pixel-wise Time-Series Analysis 
 
-```{r, warning=FALSE, timeit = TRUE}
+```{r, warning=FALSE, timeit = TRUE, eval=FALSE}
 # Make a df for collecting pixel-wise time-series statistics. 
 # The seven statistic features are :
 #1  Average fluorescent intensity of raw series; 
@@ -311,7 +311,7 @@ print("The number of non-zero rows of each column in the statistics dataframe:")
 colSums(df_stats[,c(1,2,4,7,10,13,18)] != 0) 
 
 # Show all column names 
-# colnames(df_stats)
+colnames(df_stats)
 # Show unique values of period
 #print("The periodic values obtained from analysis are:")
 #sort(unique(df_stats[["Period"]]))
@@ -319,15 +319,15 @@ colSums(df_stats[,c(1,2,4,7,10,13,18)] != 0)
 ```
 
 ## Write and save df_stats into csv file
-```{r, timeit = TRUE}
+```{r, timeit = TRUE, eval=FALSE}
 write.csv(df_stats[df_stats$Indicator == 0,], file = "BG-1_stats.csv")
 write.csv(df_stats[df_stats$Indicator == 1 | df_stats$Indicator == 2,], file = "Cell-1_stats.csv")
 ```
 
 ## Load Pre-calculated df_stats dataframe 
-```{r, echo = FALSE, eval=FALSE}
+```{r, echo = FALSE}
 df_stats_cell <- read.csv("Cell-1_stats.csv", row.names = 1)    
-df_stats_BG <- read.csv("BG-1_stats.csv", row.names = 1)
+df_stats_BG <- read.csv("BG-2_stats.csv", row.names = 1)
 df_stats <- rbind(df_stats_cell,df_stats_BG)
 
 # Count the number of non-zero terms in each column of df_stats
@@ -338,23 +338,47 @@ colSums(df_stats[,c(1,2,4,7,10,13,18)] != 0)
 
 ## Image Plot
 
-```{r, warning=FALSE, fig.height = 3, fig.width = 4, fig.align ="center", timeit=TRUE}
+```{r, warning=FALSE, fig.height = 3, fig.width = 4, fig.align ="center", timeit=TRUE, eval=FALSE}
 
 # Make a copy of df_stats for plotting heatmap image
 df_stats_heatmap <- df_stats[df_stats$Indicator == 1 | df_stats$Indicator == 2, ]
 
-# Cell-1 Periodic value and distribution 
+# Illustration of ROI and Peripheral
+#matrix_ROI <- as.matrix.xtabs(xtabs( (Indicator-1) ~ X+Y, data=df_stats_heatmap))
+#matrix_Peripheral <- as.matrix.xtabs(xtabs( -(Indicator-2) ~ X+Y, data=df_stats_heatmap))
+#img_ROI <- rgbImage( blue=matrix_ROI, green=matrix_Peripheral )
+#display(img_ROI, method= 'raster', all=TRUE)
+
+# Cell Periodic value and distribution 
 matrix_period <- as.matrix.xtabs(xtabs( Period ~ X+Y, data=df_stats_heatmap))/120
+matrix_period <- normalize(matrix_period)
 
 # Cut-off background pixel's period value (with Cell outline mask)
 df_stats_heatmap[df_stats_heatmap$Indicator == 1,]$Period <- 0
 
 matrix_period_mask <- as.matrix.xtabs(xtabs( Period ~ X+Y, data=df_stats_heatmap))/120
+matrix_period_mask <- normalize(matrix_period_mask)
 
 m_period_mask <- abind(matrix_period, matrix_period_mask, along = 3)
 img_period_mask <- Image(m_period_mask,colormode = 'Grayscale')
 img_period_map_mask <- rgbImage(green=img_period_mask)
 display(img_period_map_mask, method= 'raster', all=TRUE)
+
+
+# Cell Amplitude value and distribution 
+matrix_amp <- as.matrix.xtabs(xtabs( Amplitude ~ X+Y, data=df_stats_heatmap))/60
+matrix_amp <- normalize(matrix_amp)
+
+# Cut-off background pixel's period value (with Cell outline mask)
+df_stats_heatmap[df_stats_heatmap$Indicator == 1,]$Amplitude <- 0
+
+matrix_amp_mask <- as.matrix.xtabs(xtabs( Amplitude ~ X+Y, data=df_stats_heatmap))/60
+matrix_amp_mask <- normalize(matrix_amp_mask)
+
+m_amp_mask <- abind(matrix_amp, matrix_amp_mask, along = 3)
+img_amp_mask <- Image(m_amp_mask,colormode = 'Grayscale')
+img_amp_map_mask <- rgbImage(blue=img_amp_mask)
+display(img_amp_map_mask, method= 'raster', all=TRUE)
 
 
 # Divide pixels into 4 levels based on period value
@@ -415,17 +439,20 @@ matrix_sum <- as.matrix.xtabs(xtabs( I_bar ~ X+Y, data=df_stats_heatmap))
 matrix_sum <- normalize(matrix_sum)
 
 # NB Analysis
-matrix_NB <- as.matrix.xtabs(xtabs( (I_std)^2/I_bar ~ X+Y, data=df_stats_heatmap))
-matrix_NB <- normalize(matrix_NB)
+matrix_BN <- as.matrix.xtabs(xtabs( (I_std)^2/I_bar ~ X+Y, data=df_stats_heatmap))
+matrix_BN <- normalize(matrix_BN)
 
-m2_sumNB <- abind(matrix_sum,matrix_NB,along=3)
+m2_sumNB <- abind(matrix_sum,matrix_BN, along=3)
 img_sumNB <- Image(m2_sumNB,colormode='Grayscale')
 display(img_sumNB, method = 'raster', all=TRUE)
 
-# Overlay Cell-1 fluorescence summation image and Periodic values ditribution
-#img <- rgbImage(blue=img_sum, green=img_sum+img_period, red=img_sum)
+# Overlay Cell fluorescence summation/NB image and Periodic values 
 img <- rgbImage(blue=m2_sumNB, green=m2_sumNB+abind(matrix_period_mask,matrix_period_mask, along=3), red=m2_sumNB)
 display(img, method = 'raster', all=TRUE)
+
+# Overlay Cell fluorescence summation/NB image and Amplitude values 
+img_2 <- rgbImage(blue=m2_sumNB+abind(matrix_amp_mask,matrix_amp_mask, along=3), green=m2_sumNB, red=m2_sumNB)
+display(img_2, method = 'raster', all=TRUE)
 
 #img <- rgbImage(blue=matrix_period_mask_l1*2, green=matrix_period_mask_l2, #red=matrix_period_mask_l3/1.5)
 #display(img, method = 'raster', all=TRUE)
@@ -460,7 +487,7 @@ df_stats_BG <- df_stats[which(df_stats$Indicator == 0),]
 
 ## Plotting Statistics
 **Histogram**
-```{r, warning=FALSE, fig.height = 4, fig.width = 8,fig.align="center",timeit = TRUE}
+```{r, warning=FALSE, fig.height = 4, fig.width = 8,fig.align="center",timeit = TRUE, eval=FALSE}
 
 df_cmd <- rbind(df_stats_Cell,df_stats_RI, df_stats_BG)
 
@@ -483,19 +510,10 @@ grid.arrange(h1,h2,ncol=2)
 
 ```
 
-```{r, warning=FALSE, fig.height = 4, fig.width = 6,fig.align="center",timeit = TRUE}
-h3 <- ggplot(df_cmd, aes(x=Amplitude))  +
-  geom_histogram(data = df_stats_Cell, aes(y=..count../sum(..count..)*100), colour="blue", fill = "blue", alpha =0.3, binwidth = 1) +
-  geom_histogram(data = df_stats_RI, aes(y=..count../sum(..count..)*100), colour="green", fill = "green", alpha =0.3, binwidth = 1) +
-  geom_histogram(data = df_stats_BG, aes(y=..count../sum(..count..)*100), colour="red", fill = "red", alpha =0.3, binwidth = 1) +
-  xlab("Average Amplitude of Principal Time-series") +
-  ylab("Percentage (%)")
 
-h3
-```
 
 **Scatter Plot**
-```{r,warning=FALSE, fig.height = 7, fig.width = 7, fig.align="center",timeit = TRUE}
+```{r,warning=FALSE, fig.height = 7, fig.width = 7, fig.align="center",timeit = TRUE, eval=FALSE}
   
 sp1 <- ggplot(df_cmd, aes(y = I_bar, x = E1*100))  +
   geom_point(data = df_stats_BG, color = "red", size=0.6, alpha =0.3) +
@@ -529,7 +547,7 @@ grid.arrange(sp1,sp2,sp3,sp4,ncol=2)
 
 ```
 
-```{r,warning=FALSE, fig.height = 7, fig.width = 7, fig.align="center",timeit = TRUE}
+```{r,warning=FALSE, fig.height = 7, fig.width = 7, fig.align="center",timeit = TRUE, eval=FALSE}
   
 sp5 <- ggplot(df_cmd, aes(y = A1, x = E1*100))  +
   geom_point(data = df_stats_BG, color = "red", size=0.6, alpha =0.3) +
@@ -566,7 +584,7 @@ grid.arrange(sp5,sp6,sp7,sp8,ncol=2)
 
 
 **Barplot**
-```{r, warning=FALSE, fig.height = 4, fig.width = 6, fig.align="center",timeit = TRUE}
+```{r, warning=FALSE, fig.height = 4, fig.width = 6, fig.align="center",timeit = TRUE, eval=FALSE}
 
 ggplot(df_cmd, aes(x=Period*frame_rate/1000))  + scale_x_continuous(limits = c(6, 96)) + 
   geom_histogram(data = df_stats_Cell, aes(y=..count../sum(..count..)*100), colour="blue", fill = "blue", alpha =0.4, binwidth = 2) +
@@ -576,11 +594,21 @@ ggplot(df_cmd, aes(x=Period*frame_rate/1000))  + scale_x_continuous(limits = c(6
   xlab("Period (s)") +
   ylab("Percentage (%)")
 
+
+ggplot(df_cmd[df_cmd$Amplitude!=0,], aes(x=Amplitude))  + scale_x_continuous(limits = c(0, 90)) + 
+  geom_histogram(data = df_stats_Cell[df_stats_Cell$Amplitude!=0,], aes(y=..count../sum(..count..)*100), colour="blue", fill = "blue", alpha =0.3, binwidth = 1) +
+  geom_histogram(data = df_stats_RI[df_stats_RI$Amplitude!=0,], aes(y=..count../sum(..count..)*100), colour="green", fill = "green", alpha =0.3, binwidth = 1) +
+  geom_histogram(data = df_stats_BG[df_stats_BG$Amplitude!=0,], aes(y=..count../sum(..count..)*100), colour="red", fill = "red", alpha =0.3, binwidth = 1) +
+  facet_grid(Indicator ~ .) +
+  xlab("Average Amplitude") +
+  ylab("Percentage (%)")
+
+
 ```
 
 
 
-```{r,warning=FALSE, fig.height = 4, fig.width = 8, fig.ncol = 1, fig.align = "center",timeit = TRUE}
+```{r,warning=FALSE, fig.height = 4, fig.width = 10, fig.ncol = 1, fig.align = "center",timeit = TRUE}
 # Make a df_stats copy for factors plotting
 df_stats_factor <- df_stats[df_stats$Period!=0,]
 
@@ -731,7 +759,7 @@ phase_sine(F1[1:248], per1)
 
 ## Check random pixels with non-zero period values in Cell region
 
-```{r, warning=FALSE, fig.height = 4, fig.width = 7, fig.align="center", timeit=TRUE}
+```{r, warning=FALSE, fig.height = 4, fig.width = 7, fig.align="center", timeit=TRUE, eval=FALSE}
 set.seed(16)
 df_stats_cell <- df_stats[which(df_stats$Indicator == 2),]
 df_stats_factor_cell <- df_stats_cell
