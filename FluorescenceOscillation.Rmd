@@ -45,7 +45,7 @@ threshold = 0.98
 frame_rate = 800
 # Period Constraints (Frame rate)
 low_pf = 8
-high_pf = 160
+high_pf = 180
 ```
 
 ## Define Functions
@@ -140,7 +140,9 @@ sine.screen.plot <- function(ts, per, threshold, header) {
   if (per < 24) {
     per <- per_fft
   }
-
+  
+  print(per)
+  
   # Transfomred linear fit for damped sinusoid time-series
   df_sine <- data.frame(cbind(y, t, sin(2*pi/per*t), cos(2*pi/per*t)))
   names(df_sine) <- c('y','t','sine', 'cos')
@@ -609,7 +611,7 @@ grid.arrange(sp5,sp6,sp7,sp8,ncol=2)
 **Barplot**
 ```{r, warning=FALSE, fig.height = 4, fig.width = 6, fig.align="center",timeit = TRUE}
 
-ggplot(df_cmd, aes(x=Period*frame_rate/1000))  + scale_x_continuous(limits = c(6, 135)) + 
+ggplot(df_cmd, aes(x=Period*frame_rate/1000))  + scale_x_continuous(limits = c(6, 150)) + 
   geom_histogram(data = df_stats_Cell, aes(y=..count../sum(..count..)*100), colour="blue", fill = "blue", alpha =0.4, binwidth = 2) +
   geom_histogram(data = df_stats_RI, aes(y=..count../sum(..count..)*100), colour="green", fill = "green", alpha =0.4, binwidth = 2) +
   geom_histogram(data = df_stats_BG, aes(y=..count../sum(..count..)*100), colour="red", fill = "red", alpha =0.4, binwidth = 2) +
@@ -681,7 +683,7 @@ grid.arrange(p11,p13,p12,ncol=3)
 ```{r, echo = FALSE, eval=FALSE}
 
 # Input of pixel header
-pixel.header <- "X58.Y48"
+pixel.header <- "X58.Y49"
 # Load single time-series from df1
 df_pixel <- df2[pixel.header]
 
