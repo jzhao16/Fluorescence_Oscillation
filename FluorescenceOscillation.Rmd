@@ -637,19 +637,19 @@ ggplot(df_cmd[df_cmd$Amplitude!=0,], aes(x=Amplitude))  + scale_x_continuous(lim
 # Make a df_stats copy for factors plotting
 df_stats_factor <- df_stats[df_stats$Period!=0,]
 
-df_stats_factor$Period <- cut(df_stats_factor$Period*frame_rate/1000, c(6, 20, 40, 60, 80, 100, 140), right = FALSE)
+df_stats_factor$Period <- cut(df_stats_factor$Period*frame_rate/1000, c(6, 20, 40, 60, 80, 100, 120, 150), right = FALSE)
 
 df_stats_factor_Cell <- df_stats_factor[which(df_stats_factor$Indicator == 2),]
 df_stats_factor_RI <- df_stats_factor[which(df_stats_factor$Indicator == 1),]
 df_stats_factor_BG <- df_stats_factor[which(df_stats_factor$Indicator == 0),]
 
-p5 <- ggplot(df_stats_factor_Cell, aes(y = I_bar, x = Period)) + geom_boxplot(fill='blue',alpha=0.6) + scale_y_continuous(limits = c(1100, 1620)) + 
+p5 <- ggplot(df_stats_factor_Cell, aes(y = I_bar, x = Period)) + geom_boxplot(fill='blue',alpha=0.6) + scale_y_continuous(limits = c(1100, 1640)) + 
     stat_summary(fun.y=mean, geom="point", shape=5, size=2) + ggtitle("Cell ROI") + ylab("Average of Fluorescence Intensity") + xlab("Period (s)")
  
-p7 <- ggplot(df_stats_factor_BG, aes(y = I_bar, x = Period)) + geom_boxplot(fill='red',alpha=0.6) + scale_y_continuous(limits = c(1100, 1620)) +
+p7 <- ggplot(df_stats_factor_BG, aes(y = I_bar, x = Period)) + geom_boxplot(fill='red',alpha=0.6) + scale_y_continuous(limits = c(1100, 1640)) +
     stat_summary(fun.y=mean, geom="point", shape=5, size=2) + ggtitle("Background") + ylab("Average of Fluorescence Intensity") + xlab("Period (s)")
 
-p6 <- ggplot(df_stats_factor_RI, aes(y = I_bar, x = Period)) + geom_boxplot(fill='green',alpha=0.6) + scale_y_continuous(limits = c(1100, 1620)) +
+p6 <- ggplot(df_stats_factor_RI, aes(y = I_bar, x = Period)) + geom_boxplot(fill='green',alpha=0.6) + scale_y_continuous(limits = c(1100, 1640)) +
     stat_summary(fun.y=mean, geom="point", shape=5, size=2) + ggtitle("Peripheral") + ylab("Average of Fluorescence Intensity") + xlab("Period (s)")
 
 grid.arrange(p5,p6,p7,ncol=3)
