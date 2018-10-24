@@ -207,7 +207,7 @@ print.df.info <- function(df1, type_name) {
 ```{r, warning=FALSE, fig.height = 5, fig.width = 4, fig.align ="center", timeit = TRUE, eval=FALSE}
 
 # Load data matrix
-df_ROI <- read.csv("Cell-1.csv")       
+df_ROI <- read.csv("Cell-9&10.csv")       
 # Remove first two columns, Header is the pixel coordinate in "x.y"" format
 df1_ROI <- df_ROI[,3:dim(df_ROI)[2]]
 # Report information of cell imaging dafaframe 
@@ -294,15 +294,6 @@ for (i in 1:length(df2)) {
   per_3 <- max(parestimate(s, list(5:6), method = "esprit")$periods)
   per_4 <- max(parestimate(s, list(7:8), method = "esprit")$periods)
   
-  #ssp<-spectrum(F1, plot=FALSE)
-  #per_fft_1 <- 1/ssp$freq[ssp$spec==max(ssp$spec)]
-  #ssp<-spectrum(F2, plot=FALSE)
-  #per_fft_2 <- 1/ssp$freq[ssp$spec==max(ssp$spec)]
-  #ssp<-spectrum(F3, plot=FALSE)
-  #per_fft_3 <- 1/ssp$freq[ssp$spec==max(ssp$spec)]
-  #ssp<-spectrum(F4, plot=FALSE)
-  #per_fft_4 <- 1/ssp$freq[ssp$spec==max(ssp$spec)]
-  
   # Calculate autocorrelation function (ACF) of principal time-series   
   df_stats[i,'P1'] <- sine.screen(F1, per_1, threshold)              # Assign the p1
   df_stats[i,'P2'] <- sine.screen(F2, per_2, threshold)              # Assign the p2
@@ -346,12 +337,12 @@ colSums(df_stats[,c(1,2,4,7,10,13,18)] != 0)
 ## Write and save df_stats into csv file
 ```{r, timeit = TRUE, eval=FALSE}
 write.csv(df_stats[df_stats$Indicator == 0,], file = "BG-1_stats.csv")
-write.csv(df_stats[df_stats$Indicator == 1 | df_stats$Indicator == 2,], file = "Cell-1_stats.csv")
+write.csv(df_stats[df_stats$Indicator == 1 | df_stats$Indicator == 2,], file = "Cell-9&10_stats.csv")
 ```
 
 ## Load Pre-calculated df_stats dataframe 
 ```{r, echo = FALSE}
-df_stats_cell <- read.csv("Cell-1_stats.csv", row.names = 1)    
+df_stats_cell <- read.csv("Cell-2_stats.csv", row.names = 1)    
 df_stats_BG <- read.csv("BG-1_stats.csv", row.names = 1)
 df_stats <- rbind(df_stats_cell,df_stats_BG)
 
@@ -383,6 +374,7 @@ img_period_mask <- Image(m_period_mask,colormode = 'Grayscale')
 img_period_map_mask <- rgbImage(green=img_period_mask)
 display(img_period_map_mask, method= 'raster', all=TRUE)
 
+writeImage(img_period_mask, "cell-4-period-m.jpeg", quality = 100)
 
 # Cell Amplitude value and distribution 
 matrix_amp <- as.matrix.xtabs(xtabs( Amplitude ~ X+Y, data=df_stats_heatmap))/80
@@ -399,6 +391,7 @@ img_amp_mask <- Image(m_amp_mask,colormode = 'Grayscale')
 img_amp_map_mask <- rgbImage(blue=img_amp_mask)
 display(img_amp_map_mask, method= 'raster', all=TRUE)
 
+writeImage(img_amp_map_mask, "cell-4-amp.jpeg", quality = 100)
 
 # Divide pixels into 4 levels based on period value (frames)
 df_stats_heatmap_factor <- df_stats_heatmap
@@ -465,6 +458,9 @@ m2_sumNB <- abind(matrix_sum,matrix_BN, along=3)
 img_sumNB <- Image(m2_sumNB,colormode='Grayscale')
 display(img_sumNB, method = 'raster', all=TRUE)
 
+writeImage(img_sumNB, "cell-4-NB.jpeg", quality = 100)
+
+
 # Overlay Cell fluorescence summation/NB image and Periodic values 
 img <- rgbImage(blue=m2_sumNB, green=m2_sumNB+abind(matrix_period_mask,matrix_period_mask, along=3), red=m2_sumNB)
 display(img, method = 'raster', all=TRUE)
@@ -484,22 +480,6 @@ display(img_2, method = 'raster', all=TRUE)
 
 ```
 
-
-```{r, echo = FALSE, eval=FALSE}
-# Heatmap plot using ggplot 
-
-ggplot(data = df_stats_heatmap, aes(x=X, y=Y, fill=Period)) + scale_y_continuous(trans = "reverse") +
-  geom_tile() + scale_fill_gradient(low="Black", high="green2", guide = 'legend')  + theme_void()
-
-ggplot(data = df_stats_heatmap, aes(x=X, y=Y, fill=Period)) + scale_y_continuous(trans = "reverse") +
-  geom_tile() + scale_fill_gradientn(colours= c("black", "dodgerblue4","dodgerblue3","dodgerblue2", "dodgerblue","deepskyblue" ),
-                       values=rescale(c(0, 9, 12, 16,  21, 30)), guide = 'legend')  + theme_void()
-
-ggplot(data = df_stats_heatmap, aes(x=X, y=Y, fill=Period)) + scale_y_continuous(trans = "reverse") +
-  geom_tile() + scale_fill_gradientn(colours= c("black", "blue","cyan","green","yellow", "orange","red","red" ),
-                       values=rescale(c(0, 9, 12, 16,  21, 30)), guide = 'legend')  + theme_void()
-
-```
 
 ## Prepare Dataframe for Plotting the Statistics 
 
@@ -644,35 +624,44 @@ df_stats_factor_RI <- df_stats_factor[which(df_stats_factor$Indicator == 1),]
 df_stats_factor_BG <- df_stats_factor[which(df_stats_factor$Indicator == 0),]
 
 p5 <- ggplot(df_stats_factor_Cell, aes(y = I_bar, x = Period)) + geom_boxplot(fill='blue',alpha=0.6) + scale_y_continuous(limits = c(1100, 1640)) + 
-    stat_summary(fun.y=mean, geom="point", shape=5, size=2) + ggtitle("Cell ROI") + ylab("Average of Fluorescence Intensity") + xlab("Period (s)")
+    stat_summary(fun.y=mean, geom="point", shape=5, size=2) + ggtitle("Cell ROI") + ylab("Average of Fluorescence Intensity") + xlab("Period (s)") + theme(axis.text.x=element_text(size=6))
+
  
 p7 <- ggplot(df_stats_factor_BG, aes(y = I_bar, x = Period)) + geom_boxplot(fill='red',alpha=0.6) + scale_y_continuous(limits = c(1100, 1640)) +
-    stat_summary(fun.y=mean, geom="point", shape=5, size=2) + ggtitle("Background") + ylab("Average of Fluorescence Intensity") + xlab("Period (s)")
+    stat_summary(fun.y=mean, geom="point", shape=5, size=2) + ggtitle("Background") + ylab("Average of Fluorescence Intensity") + xlab("Period (s)") + theme(axis.text.x=element_text(size=6))
+
 
 p6 <- ggplot(df_stats_factor_RI, aes(y = I_bar, x = Period)) + geom_boxplot(fill='green',alpha=0.6) + scale_y_continuous(limits = c(1100, 1640)) +
-    stat_summary(fun.y=mean, geom="point", shape=5, size=2) + ggtitle("Peripheral") + ylab("Average of Fluorescence Intensity") + xlab("Period (s)")
+    stat_summary(fun.y=mean, geom="point", shape=5, size=2) + ggtitle("Peripheral") + ylab("Average of Fluorescence Intensity") + xlab("Period (s)") + theme(axis.text.x=element_text(size=6))
+
 
 grid.arrange(p5,p6,p7,ncol=3)
 
 p7 <- ggplot(df_stats_factor_Cell, aes(y = I_std, x = Period)) + geom_boxplot(fill='blue',alpha=0.6)  + scale_y_continuous(limits = c(50, 170)) +
-    stat_summary(fun.y=mean, geom="point", shape=5, size=2) + ggtitle("Cell ROI") + ylab("Standard Deviation of Fluorescence Intensity") + xlab("Period (s)")
+    stat_summary(fun.y=mean, geom="point", shape=5, size=2) + ggtitle("Cell ROI") + ylab("Standard Deviation of Fluorescence Intensity") + xlab("Period (s)") + theme(axis.text.x=element_text(size=6))
+
 
 p9 <- ggplot(df_stats_factor_BG, aes(y = I_std, x = Period)) + geom_boxplot(fill='red',alpha=0.6) + scale_y_continuous(limits = c(50, 170)) +
-    stat_summary(fun.y=mean, geom="point", shape=5, size=2) + ggtitle("Background") + ylab("Standard Deviation of Fluorescence Intensity") + xlab("Period (s)")
+    stat_summary(fun.y=mean, geom="point", shape=5, size=2) + ggtitle("Background") + ylab("Standard Deviation of Fluorescence Intensity") + xlab("Period (s)") + theme(axis.text.x=element_text(size=6))
+
 
 p8 <- ggplot(df_stats_factor_RI, aes(y = I_std, x = Period)) + geom_boxplot(fill='green',alpha=0.6) + scale_y_continuous(limits = c(50, 170)) +
-    stat_summary(fun.y=mean, geom="point", shape=5, size=2) + ggtitle("Peripheral") + ylab("Standard Deviation of Fluorescence Intensity") + xlab("Period (s)")
+    stat_summary(fun.y=mean, geom="point", shape=5, size=2) + ggtitle("Peripheral") + ylab("Standard Deviation of Fluorescence Intensity") + xlab("Period (s)") + theme(axis.text.x=element_text(size=6))
+
 
 grid.arrange(p7,p8,p9,ncol=3)
 
 p11 <- ggplot(df_stats_factor_Cell, aes(y = Amplitude, x = Period)) + geom_boxplot(fill='blue',alpha=0.6) + scale_y_continuous(limits = c(10, 100)) + 
-    stat_summary(fun.y=mean, geom="point", shape=5, size=2) + ggtitle("Cell ROI") + ylab("Average Amplitude") + xlab("Period (s)")
+    stat_summary(fun.y=mean, geom="point", shape=5, size=2) + ggtitle("Cell ROI") + ylab("Average Amplitude") + xlab("Period (s)")+ theme(axis.text.x=element_text(size=6))
+
  
 p12 <- ggplot(df_stats_factor_BG, aes(y = Amplitude, x = Period)) + geom_boxplot(fill='red',alpha=0.6) + scale_y_continuous(limits = c(10, 100)) +
-    stat_summary(fun.y=mean, geom="point", shape=5, size=2) + ggtitle("Background") + ylab("Average Amplitude") + xlab("Period (s)")
+    stat_summary(fun.y=mean, geom="point", shape=5, size=2) + ggtitle("Background") + ylab("Average Amplitude") + xlab("Period (s)")+ theme(axis.text.x=element_text(size=6))
+
 
 p13 <- ggplot(df_stats_factor_RI, aes(y = Amplitude, x = Period)) + geom_boxplot(fill='green',alpha=0.6) + scale_y_continuous(limits = c(10, 100)) +
-    stat_summary(fun.y=mean, geom="point", shape=5, size=2) + ggtitle("Peripheral") + ylab("Average Amplitude") + xlab("Period (s)")
+    stat_summary(fun.y=mean, geom="point", shape=5, size=2) + ggtitle("Peripheral") + ylab("Average Amplitude") + xlab("Period (s)")+ theme(axis.text.x=element_text(size=6))
+
 
 grid.arrange(p11,p13,p12,ncol=3)
 
@@ -683,7 +672,7 @@ grid.arrange(p11,p13,p12,ncol=3)
 ```{r, echo = FALSE, eval=FALSE}
 
 # Input of pixel header
-pixel.header <- "X58.Y49"
+pixel.header <- "X23.Y27"
 # Load single time-series from df1
 df_pixel <- df2[pixel.header]
 
@@ -695,10 +684,10 @@ ssp_dt <- spectrum(df_pixel_dt[["Intensity"]], plot=FALSE)
 df_ssp_dt <- data.frame(cbind(ssp_dt$spec,round(1/ssp_dt$freq*frame_rate/1000,digits = 1)))
 names(df_ssp_dt) <- c('Spec_density','Period')
 
-p3 <- ggplot(df_ssp_dt[2:125,], aes(x=Period, y=Spec_density)) + geom_bar(stat="identity", color="black") + ggtitle("Periodgram of Detrend Fluorescence Signal") + xlab("Period (s)")
+p3 <- ggplot(df_ssp_dt[2:125,], aes(x=Period, y=Spec_density)) + geom_bar(stat="identity", color="black") + ggtitle("Periodgram of Linear Detrend Fluorescence Signal") + xlab("Period (s)")
 
-p1 <- ts_plot(df_pixel, "Raw Fluorescent Intensity Time-Series")
-p2 <- ggplot(df_pixel_dt, aes(x=Time, y=Intensity))  + geom_line() + ggtitle("Linear Detrend Fluorescent Intensity Time Series")
+p1 <- ts_plot(df_pixel, paste("Pixel", pixel.header, "Fluorescent Intensity Time-Series"))
+p2 <- ggplot(df_pixel_dt, aes(x=Time, y=Intensity))  + geom_line() + ggtitle(paste("Pixel", pixel.header, "Linear Detrend Fluorescent Intensity Time Series"))
 grid.arrange(p1,p2,p3,ncol=1)
 
 # Conduct SSA
@@ -712,7 +701,6 @@ plot(wcor(s)) # w-correlation matrix plot
 plot(wcor(s, groups = as.list(1:8))) # w-correlation matrix plot
 
 recon <- reconstruct(s, groups = list(c(1:2), c(3:4),c(5:6),c(7:8)))
-
 
 phase_sine <- function (ts, per){
   t <- seq(0,length(ts)-1)
