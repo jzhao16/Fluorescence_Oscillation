@@ -1,0 +1,298 @@
+---
+title: 'T-Cell Fluorescence Oscillation Analysis'
+author: "Jing Zhao"
+date: "02/14/2019"
+output:
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::knit_hooks$set(
+  timeit = local({
+  now = NULL
+  function(before, options) {
+    if (before) {
+      now <<- Sys.time()
+    } else {
+      res = difftime(Sys.time(), now)
+      now <<- NULL
+      # use options$label if you want the chunk label as well
+      paste('Time for this code chunk:', as.character(res))
+    }
+  }})
+)
+```
+
+```{r}
+pkgs <- c("tidyverse",
+          "Rssa",
+          "gridExtra", 
+          "scales"
+          ) 
+for (pkg in pkgs) {
+  if (! (pkg %in% rownames(installed.packages()))) { install.packages(pkg) }
+  library(pkg, character.only = TRUE)
+}
+rm(pkgs, pkg)
+```
+
+## Imaging Data Loading and Preprocessing 
+
+```{r, warning=FALSE, fig.height = 5, fig.width = 4, fig.align ="center", timeit = TRUE, eval=FALSE}
+
+# Function: Extract x,y coordiantes from each Header
+row.xy <- function(string){
+  xx <- strsplit(string,"[.]")[[1]][1]
+  yy <- strsplit(string,"[.]")[[1]][2]
+  x <- as.numeric(substring(xx,2))
+  y <- as.numeric(substring(yy,2))
+  return(c(x,y))
+}
+
+print.df.info <- function(df, region) {
+  # Z dimension
+  print(paste("There are", dim(df)[1]-1,"frames in the", region, "images."))
+  # X - Y dimensions
+  colNames <- colnames(df)
+  start_xy <- row.xy(colNames[1])
+  end_xy <- row.xy(colNames[length(colNames)])
+  print(paste("The x coordinstes range from", start_xy[1], "to", end_xy[1],"."))
+  print(paste("The y coordinstes range from", start_xy[2], "to", end_xy[2],"."))
+  x_pixels <- end_xy[1] - start_xy[1] + 1
+  y_pixels <- end_xy[2] - start_xy[2] + 1
+  print(paste("The dimension of image frame is", x_pixels,"*", y_pixels,"."))
+}
+
+# Load data matrix
+df_ROI <- read_csv("Cell-1.csv", col_types = cols())       
+# Remove first two columns, Header is the pixel coordinate in "x.y"" format
+df_ROI <- df_ROI[,3:dim(df_ROI)[2]]
+# Report information of ROI imaging dafaframe 
+print.df.info(df_ROI, "ROI (Cell + Peripheral)")
+cat("\n")
+
+# Load data matrix
+df_BG <- read_csv("BG-1.csv", col_types = cols())    
+# Remove first two columns, Header is the pixel coordinate in "x.y"" format
+df_BG <- df_BG[,3:dim(df_BG)[2]]
+# Report information of background imaging dafaframe 
+print.df.info(df_BG, "background (BG)")
+
+# Stack Cell and BG dataframes together
+df_comb <- cbind(df_ROI, df_BG)
+df_comb <- data.frame(t(df_comb))
+
+# Extract indicator column
+df_indicator <- df_comb[[1]]
+# Remove indicator column from dataframe.
+df2 <- data.frame(t(df_comb[,-1]))
+
+rm(df_comb, print.df.info)
+```
+
+## Golbal Parameters for SSA and Autocorrelation
+
+```{r}
+# Exposure Time (Frame rate, per ms)
+frame_rate = 800
+# Set ssa window length (# frames)
+window = as.integer(dim(df2)[1]/2)
+# Set lag for autocorrelation (ACF)
+lag = as.integer(dim(df2)[1]/2)
+
+# Screening Criteria
+period_lowerboundary = 8
+period_upperboundary = 200
+r.square_threshold = 0.98
+
+```
+
+
+```{r, echo = FALSE, eval=FALSE}
+
+# Function: Linear detrend 
+lm.detrend <- function(ts) {
+  df <- data.frame(ts)
+  names(df) <- "Intensity"
+  tt <- seq(1,dim(df)[1],1)
+  df[["Frame"]] <- tt
+  lm.fit <- lm(Intensity ~ Frame, df)
+  df[["Intensity"]] <- df[["Intensity"]] - predict(lm.fit)
+  return(df[["Intensity"]])
+}
+
+# The periods of principal signal are estimated by ESPRIT from library Rssa. The harmonicity of the signal is evaluated by least-square fitting to principal signal's ACF.
+
+screen_criteria <- function(per, amp, r.square){
+  if ((per < period_lowerboundary) | (per > period_upperboundary)){
+    return(c(0, 0))
+  } else {
+    if (r.square < r.square_threshold){
+      return(c(0, 0))
+    } else {
+      return(c(per, amp))
+    }
+  }
+}
+
+acf_sine_screen <- function (ts, per_esprit) {
+  # Conduct ACF and extract the acf and time pairs
+  acf <- acf(ts, lag.max = lag, plot = FALSE)
+  y <- acf$acf[1:lag]   # acf value
+  t <- acf$lag[1:lag]   # lag time
+  
+  # Conduct Fast Fourier Transform (FFT)  
+  ssp <- spectrum(ts, plot=FALSE) 
+  # Determine period with highest probability
+  per_acf <- 1/ssp$freq[ssp$spec==max(ssp$spec)]
+
+  # Construct dataframe for acf and sine, cosine for fitting
+  df_acf_sine <- data.frame(cbind(y, t, sin(2*pi/per_acf*t), cos(2*pi/per_acf*t)))
+  names(df_acf_sine) <- c('y','t','sine', 'cos')
+  # Least-square fit for damped sinusoid time-series
+  reslm <- lm(y ~ sine + cos + t * sine + t * cos, data = df_acf_sine)
+  r.square <- summary(reslm)$r.square
+
+  per <- round(per_esprit, digits = 2)
+  amp <- round(colMeans(abs(ts))*pi/2, digits = 2)
+  screen_result <- screen_criteria(per, amp, r.square)
+  
+  return(screen_result)
+}
+
+```
+
+## Pixel-wise SSA and Autocorrelation  
+
+```{r, warning=FALSE, timeit = TRUE, eval=FALSE}
+
+# Generating a dataframe wit 14 features for collecting pixel-wise SSA and signal statistics.
+#1  Average fluorescent intensity of raw signal; 
+#2  Standard deviation of fluorescent intensity of raw signal;
+#3  Percentage of Eigenvalues 1 ; 
+#4  Period 1; 
+#5  average Amplitude 1;
+#6  Percentage of Eigenvalues 2; 
+#7  Period 2; 
+#8  average Amplitude 2;
+#9  Percentage of Eigenvalues 3; 
+#10  Period 3; 
+#11  average Amplitude 3;
+#12  Percentage of Eigenvalues 4  ; 
+#13  Period 4; 
+#14  average Amplitude 4
+
+df_stats <- data.frame(t(df2[1:15,]))
+names(df_stats) <- c("I_bar_raw","I_std_raw","I_std_dt","E1", "P1","A1","E2","P2","A2","E3","P3","A3","E4","P4","A4")
+df_stats[] <- 0     
+# Calculate the average fluorescence intensity 
+df_stats[['I_bar_raw']] <- colMeans(df2) 
+# Calculate the standard deviation of fluorescence intensity 
+df_stats[['I_std_raw']] <- apply(df2, MARGIN = 2, FUN=sd)
+
+df3 <- data.frame(apply(df2, MARGIN = 2, FUN=lm.detrend))
+df_stats[['I_std_dt']] <- apply(df3, MARGIN = 2, FUN=sd)
+
+# Scan through each pixel
+for (i in 1:length(df3)) {
+  # First step, linear detrend 
+  df_pixel_dt <- df3[i]
+  # Second step, Singular Spectrum Analysis (SSA)   
+  s <- ssa(df_pixel_dt[1], L = window, plot=FALSE) 
+  
+  # Extract the 4 principal signals (left matrix)
+  recon <- reconstruct(s, groups = list(c(1:2),c(3:4),c(5:6),c(7:8)))
+  F1 <- recon$F1
+  F2 <- recon$F2
+  F3 <- recon$F3
+  F4 <- recon$F4
+ 
+  # Calulate singualr vaules in percentage
+  SS_percentage <- s$sigma/sum(s$sigma)
+  df_stats[i,'E1'] <- SS_percentage[1] + SS_percentage[2]  #  F1 percentage
+  df_stats[i,'E2'] <- SS_percentage[3] + SS_percentage[4]  #  F2 percentage
+  df_stats[i,'E3'] <- SS_percentage[5] + SS_percentage[6]  #  F3 percentage
+  df_stats[i,'E4'] <- SS_percentage[7] + SS_percentage[8]  #  F4 percentage   
+  
+  # Determine period for each principal signal using ESPRIT (Estimate of Singal Parameters by Rotational Invariance Techniques)
+  per1 <- max(parestimate(s, list(1:2), method = "esprit")$periods)
+  per2 <- max(parestimate(s, list(3:4), method = "esprit")$periods)
+  per3 <- max(parestimate(s, list(5:6), method = "esprit")$periods)
+  per4 <- max(parestimate(s, list(7:8), method = "esprit")$periods)
+
+  # Calculate autocorrelation function (ACF) of principal time-series   
+  df_stats[i,c('P1','A1')] <- acf_sine_screen(F1, per1)              # Assign the p1
+  df_stats[i,c('P2','A2')] <- acf_sine_screen(F2, per2)              # Assign the p2
+  df_stats[i,c('P3','A3')] <- acf_sine_screen(F3, per3)              # Assign the p3
+  df_stats[i,c('P4','A4')] <- acf_sine_screen(F4, per4)              # Assign the p4
+}
+
+# Convert Header of df into X, Y columns of df_stats
+rowNames_stats <- rownames(df_stats)
+df.xy <- data.frame(t(data.frame(lapply(rowNames_stats, row.xy))))
+names(df.xy) <- c("X","Y")
+df_stats <- cbind(df.xy, df_stats)
+rownames(df_stats) <- seq(1,dim(df_stats)[1],1)
+
+# Determine the characteristic Period for each pixel (maximal period chosen)
+df_stats[["Amplitude"]] <- apply(df_stats[,c('A1','A2','A3','A4')], 1, FUN=max)
+
+Period <- NULL
+for (i in 1:dim(df_stats)[1]) {
+  period_index <- match(df_stats$Amplitude[i], df_stats[i,c('A1','A2','A3','A4')])
+  Period[i] <- df_stats[i,c('P1','P2','P3','P4')][period_index]
+}
+df_stats[['Period']] <- Period
+
+# Retreive the indicator column 
+df_stats[['Indicator']] <- df_indicator
+
+# Count the number of non-zero terms in each column of df_stats
+print("The number of non-zero rows of each column in the df_stats dataframe:")
+colSums(df_stats[,c( "P1","P2","P3","P4","A1","A2","A3","A4","Period","Amplitude")] != 0) 
+
+# Show unique values of period
+#print("The unique periodic values obtained from analysis are:")
+#sort(unique(df_stats[["Period"]]))
+
+```
+
+
+
+## Define Functions
+```{r,timeit = TRUE}
+
+# Function: Split the rowname column into two columns
+split.rowname.xy <- function(df) {
+  rowNames <- rownames(df)
+  df.xy <- data.frame(t(data.frame(lapply(rowNames, row.xy))))
+  names(df.xy) <- c("X","Y")
+  df[["X"]] <- df.xy[["X"]]
+  df[["Y"]] <- df.xy[["Y"]]
+  return(df)
+}
+
+
+phase_sine <- function (ts, per){
+  t <- seq(0,length(ts)-1)
+  df_sine <- data.frame(cbind(ts, sin(2*pi/per*t), cos(2*pi/per*t)))
+  names(df_sine) <- c('y', 'sine', 'cos')
+  reslm <- lm(y ~  sine + cos , data = df_sine)
+  print(summary(reslm))
+  
+  a2 <- reslm$coefficients[2]
+  b2 <- reslm$coefficients[3]
+  phase <- as.numeric(atan(-b2/a2)/pi)
+  
+  df_sine[['y_hat']] <- data.frame(fitted(reslm))
+
+  print(ggplot(df_sine, aes(x = t)) + geom_point(aes(y=y), shape = 1) + geom_line(aes(y=y_hat, color = "red")) + xlab("Time") + ylab("F1") )
+  
+  return(phase)
+}
+
+```
+
+
+
+
