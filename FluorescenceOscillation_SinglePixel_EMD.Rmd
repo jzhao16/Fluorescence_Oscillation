@@ -8,7 +8,7 @@ output:
 
 ```{r}
 pkgs <- c("tidyverse",
-          "Rssa",
+          "EMD",
           "gridExtra", 
           "scales"
           ) 
@@ -145,43 +145,70 @@ rm(df_pixel,p1,p2,p3)
 ```
 
 ```{r}
-# Conduct SSA
-s <- ssa(df_pixel_dt, L=window)   
 
-plot(s) # Eigenvalues
-plot(s, type = "vectors") # Eigenvectors
-plot(s, type = "paired") # Pairs of eigenvectors
-plot(wcor(s)) # w-correlation matrix plot
-plot(wcor(s, groups = as.list(1:8))) # First 8 pairs of w-correlation matrix 
+names(df_pixel_dt) <- "Intensity"
+tt <- seq(1,dim(df_pixel_dt)[1],1)
+# df_pixel_dt[["Frame"]] <- tt
 
-recon <- reconstruct(s, groups = list(c(1:2), c(3:4),c(5:6),c(7:8)))
-F1 <- recon$F1
-F2 <- recon$F2
-F3 <- recon$F3
-F4 <- recon$F4
-res <- residuals(recon)
+# Conduct EMD spectrum decomposition
+emd_s <- emd(df_pixel_dt$Intensity, tt, boundary="wave", max.imf = 6)
 
-per1 <- max(parestimate(s, list(1:2), method = "esprit")$periods)
-per2 <- max(parestimate(s, list(3:4), method = "esprit")$periods)
-per3 <- max(parestimate(s, list(5:6), method = "esprit")$periods)
-per4 <- max(parestimate(s, list(7:8), method = "esprit")$periods)
+# Conduct Hilbert-Huang Transformation
+emd_f <- hilbertspec(emd_s$imf)
 
-F1_amp <- round(colMeans(abs(F1), na.rm = TRUE))
-F2_amp <- round(colMeans(abs(F2), na.rm = TRUE))
-F3_amp <- round(colMeans(abs(F3), na.rm = TRUE))
-F4_amp <- round(colMeans(abs(F4), na.rm = TRUE))
-res_amp <- round(colMeans(abs(res), na.rm = TRUE))
+### Ploting the IMF's
 
-pF1<- ts_ggplot(F1, paste("F1", "Principal Time-series, average Amplitude =", toString(F1_amp)))
-pF2<- ts_ggplot(F2, paste("F2", "Principal Time-series, average Amplitude =", toString(F2_amp)))
-pF3<- ts_ggplot(F3, paste("F3", "Principal Time-series, average Amplitude =", toString(F3_amp)))
-pF4<- ts_ggplot(F4, paste("F4", "Principal Time-series, average Amplitude =", toString(F4_amp)))
-pres <- ts_ggplot(res, paste("Residue Time-series, average Amplitude =", toString(res_amp)))
+for(i in 1:emd_s$nimf) {
+p1 <- ts_ggplot(emd_s$imf[,i], paste(i, "-th IMF", sep=""))
+p2 <- ts_histo_freq_ggplot(emd_f$instantfreq[,i], paste(i, "-th Instant Freqeuncy", sep=""))
+grid.arrange(p1,p2, ncol=1)
+}
 
-grid.arrange(pF1,pF2, ncol=1)
-grid.arrange(pF3,pF4, ncol=1)
-grid.arrange(pres,pres, ncol=1)
+p1 <- ts_ggplot(emd_s$residue, paste("residue", sep=""))
+grid.arrange(p1,p1, ncol=1)
 
+```
+
+```{r}
+
+ts_histo_freq_ggplot <- function(ts, title) {
+  nbins = 125
+  maxFreq = 500
+  df <- data.frame(ts) * 1000000/frame_rate
+  names(df) <- "InstantFrequency"
+  title <- paste(title, round(mean(df$InstantFrequency),digits=2), "±", round(sd(df$InstantFrequency),digits=2), "mHz")
+  p1 <- ggplot(df) + geom_histogram(aes(x = InstantFrequency, y = ..density..), color="gray", fill="steelblue3", bins = nbins) +  
+    stat_function(
+		fun = dnorm, 
+		args = with(df, c(mean = mean(InstantFrequency), sd = sd(InstantFrequency)))) + xlab("Instant Frequency (mHz)") + ggtitle(title) + scale_x_continuous(limits = c(0, maxFreq), sec.axis = sec_axis(~ .*frame_rate/1000000, name="Instant Frequency (per frame)"))
+  return (p1)
+}
+
+ts_histo_ggplot(emd_f$instantfreq[,5], paste(5, "-th Instant Freqeuncy,", sep=""))
+
+
+```
+```{r}
+
+ts_histo_amp_ggplot <- function(ts, title) {
+  nbins = 50
+  maxAmp = 250
+  df <- data.frame(ts)
+  names(df) <- "InstantAmplitude"
+  title <- paste(title, round(mean(df$InstantAmplitude),digits=2), "±", round(sd(df$InstantAmplitude),digits=2))
+  p1 <- ggplot(df) + geom_histogram(aes(x = InstantAmplitude, y = ..density..), color="gray", fill="steelblue3", bins = nbins) + xlab("Instant Ampitude") + ggtitle(title) + scale_x_continuous(limits = c(0, maxAmp))
+  return (p1)
+}
+
+ts_histo_amp_ggplot(emd_f$amplitude[,5], paste(5, "-th Instant Amplitude,", sep=""))
+
+```
+```{r}
+for(i in 1:emd_s$nimf) {
+p1 <- ts_ggplot(emd_s$imf[,i], paste(i, "-th IMF", sep=""))
+p2 <- ts_histo_amp_ggplot(emd_f$amplitude[,i], paste(i, "-th Instant Amplitude", sep=""))
+grid.arrange(p1,p2, ncol=1)
+}
 ```
 
 ```{r}
@@ -190,19 +217,19 @@ grid.arrange(pres,pres, ncol=1)
 
 # The periods of principal signal are estimated by ESPRIT from library Rssa. The harmonicity of the signal is evaluated by least-square fitting to principal signal's ACF.
 
-screen_criteria <- function(per_esprit, r.square){
-  if ((per_esprit < period_lowerboundary) | (per_esprit > period_upperboundary)){
+screen_criteria <- function(per, r.square){
+  if ((per < period_lowerboundary) | (per > period_upperboundary)){
     return(c(0, paste("Deteteced signal period is out of boundary (", period_lowerboundary, "~", period_upperboundary,"frames )!")))
   } else {
     if (r.square < r.square_threshold){
       return(c(0, "Detected signal does not pass the sinusoid fitting threshold!"))
     } else {
-      return(c(round(per_esprit,digit = 2), "Detected signal pass the screening criteria, period is recorded"))
+      return(c(round(per, digit = 2), "Detected signal pass the screening criteria, period is recorded"))
     }
   }
 }
 
-acf_sine_plot <-function (ts, per_esprit, header) {
+acf_sine_plot <-function (ts, header) {
   # Conduct ACF and extract the acf and time pairs
   acf <- acf(ts, lag.max = lag, plot = FALSE)
   y <- acf$acf[1:lag]   # acf value
@@ -226,8 +253,8 @@ acf_sine_plot <-function (ts, per_esprit, header) {
   
   title <- paste(
     header, " Principal Time-series\n",
-    "Period = ", round(per_esprit, digits = 2), " frames, ", 
-    "Period = ", round(per_esprit * frame_rate/1000, digits = 2), " s, ", 
+    "Period = ", round(per, digits = 2), " frames, ", 
+    "Period = ", round(per * frame_rate/1000, digits = 2), " s, ", 
     "R-square = ", toString(round(r.square, digits = 3)), "\n",
     comment, sep="")
 
@@ -236,11 +263,12 @@ acf_sine_plot <-function (ts, per_esprit, header) {
   return(p_sine)
 }
 
-acf_sine_plot(F1, per1, "F1")
-acf_sine_plot(F2, per2, "F2")
-acf_sine_plot(F3, per3, "F3")
-acf_sine_plot(F4, per4, "F4")
-rm(F1,F2,F3,F4,res)
+for(i in 1:try$nimf) {
+print(acf_sine_plot(try$imf[,i], paste(i, "-th IMF", sep="")))
+}
+
+
+
 ```
 
 ```{r}

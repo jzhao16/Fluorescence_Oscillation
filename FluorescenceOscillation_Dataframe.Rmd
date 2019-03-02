@@ -1,27 +1,10 @@
 ---
 title: 'T-Cell Fluorescence Oscillation Analysis'
 author: "Jing Zhao"
-date: "02/14/2019"
+date: "02/18/2019"
 output:
   html_document: default
 ---
-
-```{r setup, include=FALSE}
-knitr::knit_hooks$set(
-  timeit = local({
-  now = NULL
-  function(before, options) {
-    if (before) {
-      now <<- Sys.time()
-    } else {
-      res = difftime(Sys.time(), now)
-      now <<- NULL
-      # use options$label if you want the chunk label as well
-      paste('Time for this code chunk:', as.character(res))
-    }
-  }})
-)
-```
 
 ```{r}
 pkgs <- c("tidyverse",
@@ -33,12 +16,15 @@ for (pkg in pkgs) {
   if (! (pkg %in% rownames(installed.packages()))) { install.packages(pkg) }
   library(pkg, character.only = TRUE)
 }
+if (!("tictoc" %in% rownames(installed.packages()))) {devtools::install_github("jabiru/tictoc")}
+library(tictoc)
+
 rm(pkgs, pkg)
 ```
 
 ## Imaging Data Loading and Preprocessing 
 
-```{r, warning=FALSE, fig.height = 5, fig.width = 4, fig.align ="center", timeit = TRUE, eval=FALSE}
+```{r, warning=FALSE, fig.height = 5, fig.width = 4, fig.align ="center",  eval=FALSE}
 
 # Function: Extract x,y coordiantes from each Header
 row.xy <- function(string){
@@ -62,6 +48,8 @@ print.df.info <- function(df, region) {
   y_pixels <- end_xy[2] - start_xy[2] + 1
   print(paste("The dimension of image frame is", x_pixels,"*", y_pixels,"."))
 }
+# Start counting time
+tic("Data Loading")
 
 # Load data matrix
 df_ROI <- read_csv("Cell-1.csv", col_types = cols())       
@@ -87,7 +75,9 @@ df_indicator <- df_comb[[1]]
 # Remove indicator column from dataframe.
 df2 <- data.frame(t(df_comb[,-1]))
 
-rm(df_comb, print.df.info)
+cat("\n")
+toc()
+rm(df_ROI, df_BG, df_comb, print.df.info)
 ```
 
 ## Golbal Parameters for SSA and Autocorrelation
@@ -182,8 +172,10 @@ acf_sine_screen <- function (ts, per_esprit) {
 #13  Period 4; 
 #14  average Amplitude 4
 
+tic("Generating Dataframe df_stats")
+
 df_stats <- data.frame(t(df2[1:15,]))
-names(df_stats) <- c("I_bar_raw","I_std_raw","I_std_dt","E1", "P1","A1","E2","P2","A2","E3","P3","A3","E4","P4","A4")
+names(df_stats) <- c("I_bar_raw", "I_std_raw", "I_std_dt","E1", "P1","A1","E2","P2","A2","E3","P3","A3","E4","P4","A4")
 df_stats[] <- 0     
 # Calculate the average fluorescence intensity 
 df_stats[['I_bar_raw']] <- colMeans(df2) 
@@ -191,7 +183,7 @@ df_stats[['I_bar_raw']] <- colMeans(df2)
 df_stats[['I_std_raw']] <- apply(df2, MARGIN = 2, FUN=sd)
 
 df3 <- data.frame(apply(df2, MARGIN = 2, FUN=lm.detrend))
-df_stats[['I_std_dt']] <- apply(df3, MARGIN = 2, FUN=sd)
+df_stats[['I_std_dt']] <- apply(df3, MARGIN = 2, FUN = sd)
 
 # Scan through each pixel
 for (i in 1:length(df3)) {
@@ -242,7 +234,8 @@ for (i in 1:dim(df_stats)[1]) {
   period_index <- match(df_stats$Amplitude[i], df_stats[i,c('A1','A2','A3','A4')])
   Period[i] <- df_stats[i,c('P1','P2','P3','P4')][period_index]
 }
-df_stats[['Period']] <- Period
+# 'Period' is a neste list, needs to be unlisted
+df_stats[['Period']] <- unlist(Period)
 
 # Retreive the indicator column 
 df_stats[['Indicator']] <- df_indicator
@@ -252,45 +245,19 @@ print("The number of non-zero rows of each column in the df_stats dataframe:")
 colSums(df_stats[,c( "P1","P2","P3","P4","A1","A2","A3","A4","Period","Amplitude")] != 0) 
 
 # Show unique values of period
-#print("The unique periodic values obtained from analysis are:")
-#sort(unique(df_stats[["Period"]]))
+# print("The unique periodic values obtained from analysis are:")
+# sort(unique(df_stats[["Period"]]))
 
+cat("\n")
+toc()
+rm(df_pixel_dt, df.xy, df2, df3, F1, F2, F3, F4, Period, recon, s)
+rm(df_indicator, i, per1, per2, per3, per4, period_index, rowNames_stats, SS_percentage)
 ```
 
-
-
-## Define Functions
-```{r,timeit = TRUE}
-
-# Function: Split the rowname column into two columns
-split.rowname.xy <- function(df) {
-  rowNames <- rownames(df)
-  df.xy <- data.frame(t(data.frame(lapply(rowNames, row.xy))))
-  names(df.xy) <- c("X","Y")
-  df[["X"]] <- df.xy[["X"]]
-  df[["Y"]] <- df.xy[["Y"]]
-  return(df)
-}
-
-
-phase_sine <- function (ts, per){
-  t <- seq(0,length(ts)-1)
-  df_sine <- data.frame(cbind(ts, sin(2*pi/per*t), cos(2*pi/per*t)))
-  names(df_sine) <- c('y', 'sine', 'cos')
-  reslm <- lm(y ~  sine + cos , data = df_sine)
-  print(summary(reslm))
-  
-  a2 <- reslm$coefficients[2]
-  b2 <- reslm$coefficients[3]
-  phase <- as.numeric(atan(-b2/a2)/pi)
-  
-  df_sine[['y_hat']] <- data.frame(fitted(reslm))
-
-  print(ggplot(df_sine, aes(x = t)) + geom_point(aes(y=y), shape = 1) + geom_line(aes(y=y_hat, color = "red")) + xlab("Time") + ylab("F1") )
-  
-  return(phase)
-}
-
+## Write and save df_stats into csv file
+```{r, eval=FALSE}
+write_csv(df_stats[df_stats$Indicator == 0,], "BG-1_stats.csv")
+write_csv(df_stats[df_stats$Indicator == 1 | df_stats$Indicator == 2,], "ROI-1_stats.csv")
 ```
 
 
